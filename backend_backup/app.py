@@ -1,105 +1,116 @@
-from flask import Flask, jsonify, request
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import joblib
 import os
+import numpy as np
 
 app = Flask(__name__)
 CORS(app)
 
-# -------------------------
-# Load AI Model
-# -------------------------
+# ==========================
+# Load AI Model (Render Compatible)
+# ==========================
 
-model_path = os.path.join("..", "ai-model", "battery_model.pkl")
-model = joblib.load(model_path)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+MODEL_PATH = os.path.join(
+    BASE_DIR,
+    "..",
+    "ai-model",
+    "battery_model.pkl"
+)
+
+model = joblib.load(MODEL_PATH)
+
+
+# ==========================
+# Home Route
+# ==========================
 
 @app.route("/")
 def home():
     return jsonify({
-        "message": "CellGuard AI Backend Running Successfully"
+        "message": "CellGuard AI Backend Running Successfully 🚀"
     })
 
+
+# ==========================
+# Prediction Route
+# ==========================
 
 @app.route("/predict", methods=["POST"])
 def predict():
 
-    data = request.get_json()
+    try:
 
-    temperature = float(data["temperature"])
-    voltage = float(data["voltage"])
-    current = float(data["current"])
-    battery_health = float(data["batteryHealth"])
+        data = request.json
 
-    fire_risk = round(float(model.predict([[
-        temperature,
-        voltage,
-        current,
-        battery_health
-    ]])[0]), 2)
+        temperature = float(data["temperature"])
+        voltage = float(data["voltage"])
+        current = float(data["current"])
 
-    # -------------------------
-    # AI Decision Logic
-    # -------------------------
+        input_data = np.array([
+            [
+                temperature,
+                voltage,
+                current
+            ]
+        ])
 
-    if fire_risk < 30:
+        prediction = model.predict(input_data)[0]
 
-        status = "SAFE"
-        confidence = 97
-        remaining_life = "4.2 Years"
-
-        recommendation = (
-            "Battery operating normally. "
-            "No maintenance required. "
-            "Continue normal charging and monitoring."
+        battery_health = max(
+            0,
+            min(
+                100,
+                round(100 - (temperature * 0.5))
+            )
         )
 
-    elif fire_risk < 60:
-
-        status = "WARNING"
-        confidence = 92
-        remaining_life = "2.8 Years"
-
-        recommendation = (
-            "Monitor battery temperature carefully. "
-            "Avoid fast charging for long durations. "
-            "Cooling is recommended."
+        fire_risk = round(
+            min(
+                100,
+                temperature * 0.6 + current * 1.6
+            ),
+            2
         )
 
-    else:
+        if fire_risk < 30:
+            status = "SAFE"
+            recommendation = "Battery is operating normally."
+        elif fire_risk < 60:
+            status = "WARNING"
+            recommendation = "Monitor battery temperature carefully. Avoid fast charging."
+        else:
+            status = "DANGER"
+            recommendation = "Immediate inspection required. Disconnect battery if temperature keeps increasing."
 
-        status = "CRITICAL"
-        confidence = 88
-        remaining_life = "0.8 Years"
+        response = {
+            "prediction": int(prediction),
+            "batteryHealth": battery_health,
+            "fireRisk": fire_risk,
+            "systemStatus": status,
+            "recommendation": recommendation,
+            "confidence": 92,
+            "remainingLife": "2.8 Years"
+        }
 
-        recommendation = (
-            "High thermal runaway risk detected. "
-            "Stop charging immediately. "
-            "Disconnect battery and inspect the battery pack."
-        )
+        return jsonify(response)
 
-    return jsonify({
+    except Exception as e:
 
-        "batteryHealth": battery_health,
+        return jsonify({
+            "error": str(e)
+        })
 
-        "temperature": temperature,
 
-        "voltage": voltage,
-
-        "current": current,
-
-        "fireRisk": fire_risk,
-
-        "systemStatus": status,
-
-        "confidence": confidence,
-
-        "remainingLife": remaining_life,
-
-        "recommendation": recommendation
-
-    })
-
+# ==========================
+# Run
+# ==========================
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=True
+    )
