@@ -13,12 +13,7 @@ CORS(app)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-MODEL_PATH = os.path.join(
-    BASE_DIR,
-    "..",
-    "ai-model",
-    "battery_model.pkl"
-)
+MODEL_PATH = os.path.join(BASE_DIR, "..", "ai-model-old", "battery_model.pkl")
 
 model = joblib.load(MODEL_PATH)
 
