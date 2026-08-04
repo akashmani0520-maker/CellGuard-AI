@@ -11,7 +11,7 @@ export default function useAIPrediction(batteryData) {
 
     if (!batteryData) return;
 
-    fetch("http://127.0.0.1:5000/predict", {
+    fetch("https://cellguard-ai.onrender.com/predict", {
 
       method: "POST",
 
@@ -29,7 +29,6 @@ export default function useAIPrediction(batteryData) {
 
         setPrediction(data);
 
-        // Save only if values changed
         const key = JSON.stringify({
           batteryHealth: data.batteryHealth,
           temperature: data.temperature,
