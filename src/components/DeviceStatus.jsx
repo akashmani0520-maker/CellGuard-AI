@@ -11,8 +11,12 @@ import useBatteryData from "../hooks/useBatteryData";
 function DeviceStatus() {
   const batteryData = useBatteryData();
 
-  if (!batteryData) return null;
+  if (!batteryData || !batteryData.raw) return null;
 
+  const raw = batteryData.raw;
+  const isOnline = raw.telemetry?.aws_online && raw.telemetry?.wifi_online;
+  const deviceId = raw.device_id || "CGA-001";
+  
   return (
     <div className="bg-[#111827] rounded-xl p-6 mt-8 border border-gray-800">
 
@@ -27,17 +31,17 @@ function DeviceStatus() {
           <div>
             <p className="text-gray-400">Device ID</p>
             <p className="font-bold">
-              CGA-001
+              {deviceId}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <Wifi className="text-green-400" />
+          <Wifi className={isOnline ? "text-green-400" : "text-red-400"} />
           <div>
             <p className="text-gray-400">Connection</p>
-            <p className="font-bold text-green-400">
-              Online
+            <p className={`font-bold ${isOnline ? "text-green-400" : "text-red-400"}`}>
+              {isOnline ? "Online" : "Offline"}
             </p>
           </div>
         </div>
@@ -45,9 +49,9 @@ function DeviceStatus() {
         <div className="flex items-center gap-3">
           <MapPin className="text-red-400" />
           <div>
-            <p className="text-gray-400">Location</p>
+            <p className="text-gray-400">Node ID</p>
             <p className="font-bold">
-              Nagpur
+              {raw.telemetry?.node_id || "Unknown"}
             </p>
           </div>
         </div>
