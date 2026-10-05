@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Secrets / firmware build output
+ESP32_test_aws/Credential/
+ESP32_test_aws/.pio/
+error.txt
