@@ -23,11 +23,13 @@ export default function Sidebar() {
   return (
     <aside className="hidden lg:flex flex-col w-64 shrink-0 border-r border-slate-800/70 bg-ink-950/60 sticky top-0 h-screen">
       <div className="flex items-center gap-3 px-6 h-16 border-b border-slate-800/70">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/15 border border-cyan-500/30">
-          <ShieldCheck className="h-5 w-5 text-cyan-300" />
-        </div>
+        <img
+          src="/cellguard.jpeg"
+          alt="CellGuard AI Logo"
+          className="h-9 w-9 rounded-xl object-cover border border-cyan-500/30 shadow-sm"
+        />
         <div className="leading-tight">
-          <div className="text-sm font-bold text-white tracking-wide">CellGuard</div>
+          <div className="text-sm font-bold text-white tracking-wide">CellGuard AI</div>
           <div className="text-[11px] text-slate-400">BMS Intelligence</div>
         </div>
       </div>

@@ -44,7 +44,7 @@ export default function Reports() {
     const safe = latest?.analysis?.is_safe !== false;
 
     doc.setFontSize(18); doc.setTextColor(10, 20, 40);
-    doc.text("CellGuard — BMS Report", 14, 20);
+    doc.text("CellGuard AI — BMS Report", 14, 20);
     doc.setFontSize(10); doc.setTextColor(100);
     doc.text(`Device: ${deviceId || "NANO_ESP_BMS_NODE_01"} · Generated ${new Date().toLocaleString()}`, 14, 27);
 
