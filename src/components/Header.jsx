@@ -18,7 +18,7 @@ export default function Header() {
   return (
     <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
       <div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">Battery Management Intelligence</h1>
+        <h1 className="text-2xl font-bold text-white tracking-tight">Battery Management System</h1>
         <p className="text-sm text-slate-400 mt-1 flex items-center gap-2">
           <Cpu className="h-4 w-4 text-slate-500" />
           <span className="tabular">{deviceId}</span>

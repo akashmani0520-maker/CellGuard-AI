@@ -28,9 +28,8 @@ export default function Sidebar() {
           alt="CellGuard AI Logo"
           className="h-9 w-9 rounded-xl object-cover border border-cyan-500/30 shadow-sm"
         />
-        <div className="leading-tight">
+        <div>
           <div className="text-sm font-bold text-white tracking-wide">CellGuard AI</div>
-          <div className="text-[11px] text-slate-400">BMS Intelligence</div>
         </div>
       </div>
 
