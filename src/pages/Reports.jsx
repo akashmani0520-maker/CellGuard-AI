@@ -1,223 +1,113 @@
-import {
-  FileText,
-  Download,
-  FileSpreadsheet,
-} from "lucide-react";
+import { FileText, Download, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { Card, Pill } from "../components/ui";
+import { useDevice } from "../context/DeviceContext";
+import { useTelemetryCtx } from "../context/TelemetryContext";
+import AISummary from "../components/AISummary";
+import { snapshotReportPayload } from "../lib/reportAI";
+import { fmtVolt, fmtAmp, fmt, fmtTime, fmtPct } from "../lib/format";
 
-import { jsPDF } from "jspdf";
-import useBatteryData from "../hooks/useBatteryData";
-import useAIPrediction from "../hooks/useAIPrediction";
+function buildCsv(history) {
+  const head = ["timestamp", "pack_voltage", "pack_current", "pack_power", "soc", "temp1", "temp2", "temp3"];
+  const lines = history.map((r) => {
+    const t = r.telemetry || {};
+    const temps = Array.isArray(t.temperature) ? t.temperature : [];
+    return [
+      r.timestamp,
+      t.pack_voltage, t.pack_current, t.pack_power, t.soc,
+      temps[0] ?? "", temps[1] ?? "", temps[2] ?? "",
+    ].join(",");
+  });
+  return [head.join(","), ...lines].join("\n");
+}
 
-function Reports() {
+export default function Reports() {
+  const { latest, history } = useTelemetryCtx();
+  const { deviceId } = useDevice();
+  const [busy, setBusy] = useState(false);
+  const [aiReport, setAiReport] = useState("");
 
-  const batteryData = useBatteryData();
-  const ai = useAIPrediction(batteryData);
-
-  if (!batteryData) {
-    return (
-      <div className="text-white text-2xl">
-        Loading Report...
-      </div>
-    );
-  }
-
-  const prediction = ai || {
-    batteryHealth: batteryData.batteryHealth,
-    fireRisk: batteryData.fireRisk,
-    confidence: 97,
-    remainingLife: "4.2 Years",
-    systemStatus: batteryData.systemStatus,
-  };
-
-  const downloadPDF = () => {
-
-    const pdf = new jsPDF();
-
-    pdf.setFontSize(22);
-    pdf.text("CellGuard AI Battery Report", 20, 20);
-
-    pdf.setFontSize(14);
-
-    pdf.text(`Battery Health : ${prediction.batteryHealth}%`, 20, 40);
-    pdf.text(`Temperature : ${batteryData.temperature} °C`, 20, 50);
-    pdf.text(`Voltage : ${batteryData.voltage} V`, 20, 60);
-    pdf.text(`Current : ${batteryData.current} A`, 20, 70);
-    pdf.text(`Fire Risk : ${prediction.fireRisk}%`, 20, 80);
-    pdf.text(`AI Confidence : ${prediction.confidence}%`, 20, 90);
-    pdf.text(`Remaining Life : ${prediction.remainingLife}`, 20, 100);
-    pdf.text(`System Status : ${prediction.systemStatus}`, 20, 110);
-
-    pdf.save("CellGuard_AI_Report.pdf");
-  };
-
-  const exportCSV = () => {
-
-    const csv = `Battery Health,Temperature,Voltage,Current,Fire Risk,System Status
-${prediction.batteryHealth},${batteryData.temperature},${batteryData.voltage},${batteryData.current},${prediction.fireRisk},${prediction.systemStatus}`;
-
-    const blob = new Blob([csv], {
-      type: "text/csv;charset=utf-8;",
-    });
-
+  const exportCsv = () => {
+    const blob = new Blob([buildCsv(history)], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "cellguard-history.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
 
-    const link = document.createElement("a");
+  const exportPdf = async () => {
+    const mod = await import("jspdf");
+    const { jsPDF } = mod;
+    const autoTable = (await import("jspdf-autotable")).default;
+    const doc = new jsPDF();
+    const t = latest?.telemetry || {};
+    const safe = latest?.analysis?.is_safe !== false;
 
-    link.href = url;
-    link.download = "CellGuard_Report.csv";
-    link.click();
+    doc.setFontSize(18); doc.setTextColor(10, 20, 40);
+    doc.text("CellGuard — BMS Report", 14, 20);
+    doc.setFontSize(10); doc.setTextColor(100);
+    doc.text(`Device: ${deviceId || "NANO_ESP_BMS_NODE_01"} · Generated ${new Date().toLocaleString()}`, 14, 27);
+
+    const summary = [
+      ["Pack Voltage", fmtVolt(t.pack_voltage)],
+      ["Pack Current", fmtAmp(t.pack_current)],
+      ["Pack Power", `${fmt(t.pack_power, 0)} W`],
+      ["State of Charge", fmtPct(t.soc, 1)],
+      ["State of Health", fmtPct(t.soh_percent, 1)],
+      ["Cycle Count", fmt(t.cycle_count, 0)],
+      ["Status", safe ? "SAFE" : "ANOMALOUS"],
+    ];
+    autoTable(doc, { startY: 34, head: [["Parameter", "Value"]], body: summary });
+    let cursor = doc.lastAutoTable ? doc.lastAutoTable.finalY : 34;
+
+    if (aiReport && aiReport.trim()) {
+      cursor += 12;
+      doc.setFontSize(13);
+      doc.setTextColor(15, 20, 40);
+      doc.text("AI Executive Summary", 14, cursor);
+      cursor += 6;
+      doc.setFontSize(10);
+      doc.setTextColor(70, 75, 85);
+      const lines = doc.splitTextToSize(aiReport, 184);
+      doc.text(lines, 14, cursor);
+      cursor += lines.length * 4.8 + 8;
+    }
+
+    const cols = ["Time", "Pack (V)", "I (A)", "P (W)", "SOC"].concat(["T1", "T2", "T3"]);
+    const rows = history.slice().reverse().slice(0, 200).map((r) => {
+      const x = r.telemetry || {};
+      const temps = Array.isArray(x.temperature) ? x.temperature.map((v) => Number(v).toFixed(1)) : [];
+      return [fmtTime(r.timestamp), fmtVolt(x.pack_voltage), fmtAmp(x.pack_current), `${fmt(x.pack_power, 0)} W`, fmtPct(x.soc, 1)].concat(temps.length ? temps : ["", "", ""]);
+    });
+    autoTable(doc, { startY: cursor, head: [cols], body: rows });
+
+    doc.save("cellguard-bms-report.pdf");
   };
 
   return (
-
-    <div className="space-y-8">
-
-      <div>
-
-        <h1 className="text-4xl font-bold">
-          Reports
-        </h1>
-
-        <p className="text-gray-400 mt-2">
-          Generate AI Battery Health Reports.
-        </p>
-
+    <div className="space-y-6">
+    <Card
+      icon={<FileText className="h-4 w-4 text-cyan-300" />}
+      title="Reports & Export"
+      subtitle="Generate a summary snapshot as PDF or CSV"
+      actions={
+        <div className="flex items-center gap-2">
+          <button onClick={exportCsv} className="inline-flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-800/60 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"><Download className="h-3.5 w-3.5" /> CSV</button>
+          <button onClick={async () => { setBusy(true); try { await exportPdf(); } finally { setBusy(false); } }} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-60">
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} PDF Report
+          </button>
+        </div>
+      }
+    >
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Pill toneKey={latest?.analysis?.is_safe ? "safe" : "danger"}>{latest?.analysis?.is_safe ? "SAFE" : "ANOMALOUS"}</Pill>
+        <div className="text-sm text-slate-300">{history.length} samples available</div>
+        <div className="text-sm text-slate-300">{deviceId}</div>
+        <div className="text-sm text-slate-300">Export includes latest 200 rows</div>
       </div>
+    </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-
-        <div className="bg-[#111827] rounded-xl p-6 border border-gray-800">
-
-          <p className="text-gray-400">
-            Battery Health
-          </p>
-
-          <h2 className="text-5xl font-bold text-green-400 mt-4">
-            {prediction.batteryHealth}%
-          </h2>
-
-        </div>
-
-        <div className="bg-[#111827] rounded-xl p-6 border border-gray-800">
-
-          <p className="text-gray-400">
-            Temperature
-          </p>
-
-          <h2 className="text-5xl font-bold text-orange-400 mt-4">
-            {batteryData.temperature}°C
-          </h2>
-
-        </div>
-
-        <div className="bg-[#111827] rounded-xl p-6 border border-gray-800">
-
-          <p className="text-gray-400">
-            Voltage
-          </p>
-
-          <h2 className="text-5xl font-bold text-blue-400 mt-4">
-            {batteryData.voltage}V
-          </h2>
-
-        </div>
-
-        <div className="bg-[#111827] rounded-xl p-6 border border-gray-800">
-
-          <p className="text-gray-400">
-            Fire Risk
-          </p>
-
-          <h2 className="text-5xl font-bold text-red-400 mt-4">
-            {prediction.fireRisk}%
-          </h2>
-
-        </div>
-
-      </div>
-
-      <div className="grid grid-cols-2 gap-6">
-
-        <button
-          onClick={downloadPDF}
-          className="bg-blue-600 hover:bg-blue-700 rounded-xl p-6 flex justify-center items-center gap-3 text-xl font-semibold"
-        >
-
-          <Download />
-
-          Download PDF
-
-        </button>
-
-        <button
-          onClick={exportCSV}
-          className="bg-green-600 hover:bg-green-700 rounded-xl p-6 flex justify-center items-center gap-3 text-xl font-semibold"
-        >
-
-          <FileSpreadsheet />
-
-          Export CSV
-
-        </button>
-
-      </div>
-
-      <div className="bg-[#111827] rounded-xl p-6 border border-gray-800">
-
-        <div className="flex items-center gap-3 mb-5">
-
-          <FileText className="text-blue-400"/>
-
-          <h2 className="text-2xl font-bold">
-            AI Report Summary
-          </h2>
-
-        </div>
-
-        <div className="space-y-3 text-lg">
-
-          <p>
-            Battery Health :
-            <span className="text-green-400 font-bold">
-              {" "} {prediction.batteryHealth}%
-            </span>
-          </p>
-
-          <p>
-            Fire Risk :
-            <span className="text-orange-400 font-bold">
-              {" "} {prediction.fireRisk}%
-            </span>
-          </p>
-
-          <p>
-            Remaining Life :
-            <span className="text-blue-400 font-bold">
-              {" "} {prediction.remainingLife}
-            </span>
-          </p>
-
-          <p>
-            AI Confidence :
-            <span className="text-purple-400 font-bold">
-              {" "} {prediction.confidence}%
-            </span>
-          </p>
-
-          <p>
-            Current Status :
-            <span className="text-green-400 font-bold">
-              {" "} {prediction.systemStatus}
-            </span>
-          </p>
-
-        </div>
-
-      </div>
-
+      <AISummary title="Live Dataset Report" payload={snapshotReportPayload(latest)} disabled={!latest} onGenerated={setAiReport} />
     </div>
-
   );
 }
-
-export default Reports;

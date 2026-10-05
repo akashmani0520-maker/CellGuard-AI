@@ -1,132 +1,66 @@
-import {
-  LayoutDashboard,
-  Activity,
-  BatteryCharging,
-  Brain,
-  History,
-  Settings,
-  TriangleAlert,
-  FileText,
-  LogOut,
-} from "lucide-react";
-
 import { NavLink } from "react-router-dom";
+import {
+  LayoutDashboard, Activity, LineChart, BrainCircuit, Bell,
+  History, FileText, Settings, ShieldCheck,
+} from "lucide-react";
+import { useTelemetryCtx } from "../context/TelemetryContext";
 
-const menuItems = [
-  {
-    icon: LayoutDashboard,
-    title: "Dashboard",
-    path: "/",
-  },
-  {
-    icon: Activity,
-    title: "Live Monitor",
-    path: "/live-monitor",
-  },
-  {
-    icon: BatteryCharging,
-    title: "Battery Analytics",
-    path: "/battery-analytics",
-  },
-  {
-    icon: Brain,
-    title: "AI Prediction",
-    path: "/ai-prediction",
-  },
-  {
-    icon: TriangleAlert,
-    title: "Alerts",
-    path: "/alerts",
-  },
-  {
-    icon: FileText,
-    title: "Reports",
-    path: "/reports",
-  },
-  {
-    icon: History,
-    title: "History",
-    path: "/history",
-  },
-  {
-    icon: Settings,
-    title: "Settings",
-    path: "/settings",
-  },
+const LINKS = [
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/live-monitor", label: "Live Monitor", icon: Activity },
+  { to: "/battery-analytics", label: "Battery Analytics", icon: LineChart },
+  { to: "/ai-prediction", label: "AI Prediction", icon: BrainCircuit },
+  { to: "/alerts", label: "Alerts", icon: Bell },
+  { to: "/history", label: "History", icon: History },
+  { to: "/reports", label: "Reports", icon: FileText },
+  { to: "/settings", label: "Settings", icon: Settings },
 ];
 
-function Sidebar() {
+export default function Sidebar() {
+  const { status } = useTelemetryCtx();
+  const online = status.online;
+
   return (
-    <div className="w-72 bg-[#111827] border-r border-gray-800 flex flex-col min-h-screen">
-
-      {/* Logo */}
-      <div className="p-8">
-        <h1 className="text-3xl font-bold text-blue-500">
-          CellGuard AI
-        </h1>
-
-        <p className="text-gray-400 text-sm mt-2">
-          Battery Safety Platform
-        </p>
-      </div>
-
-      {/* Menu */}
-      <div className="flex-1 px-5">
-        <div className="space-y-2">
-
-          {menuItems.map((item, index) => {
-            const Icon = item.icon;
-
-            return (
-              <NavLink
-                key={index}
-                to={item.path}
-                className={({ isActive }) =>
-                  `flex items-center gap-4 p-4 rounded-xl transition-all duration-300 ${
-                    isActive
-                      ? "bg-blue-600"
-                      : "hover:bg-[#1A2335]"
-                  }`
-                }
-              >
-                <Icon size={20} />
-
-                <span className="font-medium">
-                  {item.title}
-                </span>
-              </NavLink>
-            );
-          })}
-
+    <aside className="hidden lg:flex flex-col w-64 shrink-0 border-r border-slate-800/70 bg-ink-950/60 sticky top-0 h-screen">
+      <div className="flex items-center gap-3 px-6 h-16 border-b border-slate-800/70">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/15 border border-cyan-500/30">
+          <ShieldCheck className="h-5 w-5 text-cyan-300" />
+        </div>
+        <div className="leading-tight">
+          <div className="text-sm font-bold text-white tracking-wide">CellGuard</div>
+          <div className="text-[11px] text-slate-400">BMS Intelligence</div>
         </div>
       </div>
 
-      {/* Bottom User Panel */}
-      <div className="border-t border-gray-800 p-5">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        {LINKS.map(({ to, label, icon: Icon, end }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            className={({ isActive }) =>
+              `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                isActive
+                  ? "bg-cyan-500/10 text-cyan-300 border border-cyan-500/20"
+                  : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-100 border border-transparent"
+              }`
+            }
+          >
+            <Icon className="h-4.5 w-4.5" />
+            {label}
+          </NavLink>
+        ))}
+      </nav>
 
-        <div className="flex items-center justify-between">
-
-          <div>
-            <p className="font-semibold">
-              Admin
-            </p>
-
-            <p className="text-gray-400 text-sm">
-              System Operator
-            </p>
+      <div className="px-4 py-4 border-t border-slate-800/70">
+        <div className="rounded-xl glass p-3 flex items-center gap-3">
+          <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${online ? "bg-emerald-400 pulse-dot" : "bg-rose-500"}`} />
+          <div className="text-xs">
+            <div className="text-slate-200 font-medium">{online ? "Live stream" : "Disconnected"}</div>
+            <div className="text-slate-500">{online ? "AWS uplink active" : "check network"}</div>
           </div>
-
-          <LogOut
-            className="cursor-pointer hover:text-red-400"
-            size={22}
-          />
-
         </div>
-
       </div>
-
-    </div>
+    </aside>
   );
 }
-
-export default Sidebar;

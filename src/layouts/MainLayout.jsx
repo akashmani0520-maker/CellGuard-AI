@@ -1,31 +1,26 @@
+import { Outlet } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import Header from "../components/Header";
-import { Outlet } from "react-router-dom";
+import { TelemetryProvider } from "../context/TelemetryContext";
+import AssistantDock from "../components/AssistantDock";
 
-function MainLayout() {
+export default function MainLayout() {
   return (
-    <div className="flex min-h-screen bg-[#0B1220] text-white">
-
-      <Sidebar />
-
-      <div className="flex-1 overflow-y-auto">
-
-        <div className="p-8">
-
-          <Header />
-
-          <div className="mt-8">
-
-            <Outlet />
-
+    <TelemetryProvider>
+      <div className="flex min-h-screen text-white">
+        <Sidebar />
+        <div className="flex-1 min-w-0">
+          <div className="grid-bg min-h-screen">
+            <div className="px-4 md:px-8 pt-6 pb-16">
+              <Header />
+              <main className="mt-6">
+                <Outlet />
+              </main>
+            </div>
           </div>
-
         </div>
-
       </div>
-
-    </div>
+      <AssistantDock />
+    </TelemetryProvider>
   );
 }
-
-export default MainLayout;

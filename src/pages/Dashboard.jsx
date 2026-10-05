@@ -1,149 +1,102 @@
-import DashboardOverview from "../components/DashboardOverview";
-import StatusCard from "../components/StatusCard";
-import LiveParameters from "../components/LiveParameters";
-import TemperatureChart from "../components/TemperatureChart";
-import VoltageChart from "../components/VoltageChart";
-import RecentAlerts from "../components/RecentAlerts";
-import AIInsights from "../components/AIInsights";
-import BatteryHeatMap from "../components/BatteryHeatMap";
-import DeviceStatus from "../components/DeviceStatus";
+import { BatteryCharging, TrendingUp, Activity, Gauge } from "lucide-react";
+import { useTelemetryCtx } from "../context/TelemetryContext";
+import { Stat, Pill } from "../components/ui";
+import CellsPanel from "../components/CellsPanel";
+import ThermalPanel from "../components/ThermalPanel";
+import SafetyPanel from "../components/SafetyPanel";
+import FaultsPanel from "../components/FaultsPanel";
+import EnergyPanel from "../components/EnergyPanel";
+import ControlPanel from "../components/ControlPanel";
+import { VoltageChart, CurrentChart, TemperatureChart } from "../components/Charts";
+import AISummary from "../components/AISummary";
+import { snapshotReportPayload } from "../lib/reportAI";
+import { fmtVolt, fmtAmp, fmtWatt, fmt, ago } from "../lib/format";
 
-import useBatteryData from "../hooks/useBatteryData";
-import useAIPrediction from "../hooks/useAIPrediction";
+export default function Dashboard() {
+  const { latest, status } = useTelemetryCtx();
+  const t = latest?.telemetry || {};
 
-function Dashboard() {
-  const batteryData = useBatteryData();
-
-  // AI ko battery data pass karna zaroori hai
-  const aiPrediction = useAIPrediction(batteryData);
-
-  if (!batteryData) {
-    return (
-      <div className="text-white text-2xl">
-        Connecting to Firebase...
-      </div>
-    );
+  if (status.loading && !latest) {
+    return <Loading />;
+  }
+  if (!status.online && !latest) {
+    return <Offline status={status} />;
   }
 
+  const currentTone = t.pack_current > 0 ? "ok" : t.pack_current < 0 ? "warning" : "safe";
+
   return (
-    <div className="space-y-8">
-
-      <DashboardOverview />
-
-      {/* Status Cards */}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-
-        <StatusCard
-          title="Battery Health"
-          value={`${batteryData.batteryHealth}%`}
-          status="Excellent"
-          valueColor="text-green-400"
-        />
-
-        <StatusCard
-          title="Fire Risk"
-          value={`${batteryData.fireRisk}%`}
-          status={
-            batteryData.fireRisk >= 70
-              ? "Critical"
-              : batteryData.fireRisk >= 40
-              ? "Warning"
-              : "Low Risk"
-          }
-          valueColor="text-orange-400"
-        />
-
-        <StatusCard
-          title="Temperature"
-          value={`${batteryData.temperature}°C`}
-          status={
-            batteryData.temperature >= 40
-              ? "High"
-              : "Normal"
-          }
-          valueColor="text-green-400"
-        />
-
-        <StatusCard
-          title="System Status"
-          value={batteryData.systemStatus}
-          status="All Systems Normal"
-          valueColor="text-green-400"
-        />
-
-      </div>
-
-      {/* Live Parameters + AI Gauge */}
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-
-        <LiveParameters />
-
-        <div className="bg-[#111827] rounded-xl p-6 border border-gray-800">
-
-          <h2 className="text-xl font-bold mb-6">
-            AI Fire Risk Gauge
-          </h2>
-
-          <div className="flex justify-center items-center h-72">
-
-            <div className="w-44 h-44 rounded-full border-[12px] border-green-500 flex items-center justify-center">
-
-              <div className="text-center">
-
-                <h1 className="text-5xl font-bold text-green-400">
-                  {aiPrediction
-                    ? `${aiPrediction.fireRisk}%`
-                    : `${batteryData.fireRisk}%`}
-                </h1>
-
-                <p className="text-gray-400 mt-2">
-                  {aiPrediction
-                    ? aiPrediction.systemStatus
-                    : batteryData.systemStatus}
-                </p>
-
-              </div>
-
-            </div>
-
-          </div>
-
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-white">Live Overview</h2>
+          <p className="text-sm text-slate-400">Last sample {ago(latest?.timestamp)}{latest?.timestamp ? ` · ${new Date(Number(latest.timestamp)).toLocaleTimeString()}` : ""}</p>
         </div>
-
+        <Pill toneKey={latest?.analysis?.is_safe ? "safe" : "danger"} pulse>
+          {latest?.analysis?.is_safe ? "All systems nominal" : "Attention required"}
+        </Pill>
       </div>
 
-      {/* Charts */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        <Stat label="Pack Voltage" value={fmtVolt(t.pack_voltage)} icon={<BatteryCharging className="h-4 w-4 text-cyan-300" />} toneKey={t.pack_voltage > 4 ? "ok" : "danger"} />
+        <Stat label="Pack Current" value={fmtAmp(t.pack_current)} icon={<Activity className="h-4 w-4 text-blue-300" />} toneKey={currentTone} sub="+ charge / − discharge" />
+        <Stat label="Pack Power" value={fmtWatt(t.pack_power)} icon={<TrendingUp className="h-4 w-4 text-amber-300" />} />
+        <Stat label="State of Charge" value={`${fmt(t.soc, 1)}%`} icon={<Gauge className="h-4 w-4 text-emerald-300" />} toneKey={t.soc > 0 ? "ok" : "danger"} />
+      </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-
-        <TemperatureChart />
-
-        <VoltageChart />
-
+        <CellsPanel />
+        <ThermalPanel />
       </div>
-
-      {/* Alerts + AI */}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-
-        <RecentAlerts />
-
-        <AIInsights />
-
+        <SafetyPanel />
+        <FaultsPanel />
       </div>
 
-      {/* Heatmap */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div className="panel p-5">
+          <div className="text-sm font-semibold text-slate-100 mb-4">Voltage Trend</div>
+          <VoltageChart />
+        </div>
+        <div className="panel p-5">
+          <div className="text-sm font-semibold text-slate-100 mb-4">Current / Power</div>
+          <CurrentChart />
+        </div>
+      </div>
 
-      <BatteryHeatMap />
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <EnergyPanel />
+        <ControlPanel />
+      </div>
 
-      {/* Device Status */}
+      <div className="panel p-5">
+        <div className="text-sm font-semibold text-slate-100 mb-4">Temperature Trend</div>
+        <TemperatureChart height={250} />
+      </div>
 
-      <DeviceStatus />
-
+      <AISummary title="Live System Report" payload={snapshotReportPayload(latest)} disabled={!latest} />
     </div>
   );
 }
 
-export default Dashboard;
+function Loading() {
+  return (
+    <div className="panel p-8">
+      <div className="shimmer h-10 w-56 rounded-lg mb-4" />
+      <div className="shimmer h-3 w-full rounded mb-3" />
+      <div className="shimmer h-3 w-4/5 rounded" />
+      <p className="text-sm text-slate-400 mt-6">Contacting the BMS uplink…</p>
+    </div>
+  );
+}
+
+function Offline({ status }) {
+  return (
+    <div className="panel p-8 text-center">
+      <div className="text-rose-400 text-4xl">⚠️</div>
+      <h3 className="mt-3 text-lg font-semibold text-white">Telemetry unavailable</h3>
+      <p className="text-sm text-slate-400 mt-2">{status.error || "Could not reach the AWS telemetry API."}</p>
+    </div>
+  );
+}
