@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Save, RefreshCcw, Plug, Wifi, Cloud, Sparkles, Trash2 } from "lucide-react";
+import { Save, RefreshCcw, Plug, Wifi, Cloud, Sparkles, Trash2, Palette, Check } from "lucide-react";
 import { Card, Pill, Readout } from "../components/ui";
 import { useDevice } from "../context/DeviceContext";
 import { useTelemetryCtx } from "../context/TelemetryContext";
 import { fmtUptime, ago } from "../lib/format";
+import { THEMES, getTheme, setTheme } from "../lib/theme";
 import { getApiKey, setApiKey, clearApiKey, getModel, setModel, getSystemPrompt, setSystemPrompt, resetSystemPrompt, callChatCompletion, DEFAULT_MODEL } from "../lib/deepseek";
 
 const REFRESH_OPTIONS = [3000, 5000, 10000, 30000];
@@ -12,6 +13,12 @@ export default function Settings() {
   const { deviceId, setDeviceId, refreshMs, setRefreshMs } = useDevice();
   const { latest, status, refetch } = useTelemetryCtx();
   const [draft, setDraft] = useState(deviceId);
+  const [theme, setThemeState] = useState(getTheme());
+
+  const chooseTheme = (id) => {
+    setTheme(id);
+    setThemeState(id);
+  };
   const [saved, setSaved] = useState(false);
   const [apiKey, setApiKeyDraft] = useState(getApiKey());
   const [model, setModelDraft] = useState(getModel());
@@ -102,6 +109,35 @@ export default function Settings() {
             <div className="pt-2 border-t border-slate-800 text-xs text-slate-400">
               <button onClick={refetch} className="text-cyan-300 hover:underline mr-1">Refresh now</button>· last {ago(status.updatedAt)} · API {status.online ? "reachable" : "unreachable"}
             </div>
+          </div>
+        </Card>
+
+        <Card title="Appearance" subtitle="Choose the dashboard theme" icon={<Palette className="h-4 w-4 text-pink-300" />} className="xl:col-span-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {THEMES.map((th) => {
+              const active = theme === th.id;
+              return (
+                <button
+                  key={th.id}
+                  id={`theme-${th.id}`}
+                  onClick={() => chooseTheme(th.id)}
+                  className={`group text-left rounded-xl border p-3 transition-all ${active ? "border-cyan-500/60 ring-1 ring-cyan-500/40 bg-cyan-500/5" : "border-slate-700 hover:border-slate-500"}`}
+                >
+                  <div className="flex h-14 overflow-hidden rounded-lg border border-slate-700">
+                    <div className="flex-1" style={{ background: th.swatch[0] }} />
+                    <div className="flex-1" style={{ background: th.swatch[1] }} />
+                    <div className="w-6" style={{ background: th.swatch[2] }} />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-slate-100">{th.label}</div>
+                      <div className="text-[11px] text-slate-500">{th.desc}</div>
+                    </div>
+                    {active && <Check className="h-4 w-4 text-cyan-300" />}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </Card>
 

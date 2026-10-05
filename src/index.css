@@ -13,30 +13,95 @@
   --color-glow: #38bdf8;
 }
 
+/* ---- Theme variables (default: black) ---- */
+:root {
+  --app-bg: #000000;
+  --app-fg: #e2e8f0;
+  --panel-bg: rgba(10,10,10,0.85);
+  --panel-border: rgba(148,163,184,0.14);
+  --panel-shadow: 0 10px 30px -18px rgba(0,0,0,0.8);
+  --glass-bg: rgba(10,10,10,0.7);
+  --grid-line: rgba(148,163,184,0.03);
+  --scroll-thumb: #262626;
+}
+
+[data-theme="midnight"] {
+  --app-bg:
+    radial-gradient(1200px 600px at 80% -10%, rgba(34, 211, 238, 0.10), transparent 60%),
+    radial-gradient(900px 500px at -10% 20%, rgba(56, 189, 248, 0.08), transparent 55%),
+    linear-gradient(180deg, #0b1220 0%, #060a14 100%);
+  --panel-bg: rgba(13,22,40,0.72);
+  --glass-bg: rgba(15,23,42,0.55);
+  --grid-line: rgba(148,163,184,0.05);
+  --scroll-thumb: #243554;
+  --color-ink-950: #060a14;
+  --color-ink-900: #0b1220;
+  --color-ink-850: #0e1728;
+  --color-ink-800: #111c30;
+  --color-ink-700: #1c2b45;
+  --color-ink-600: #243554;
+}
+
+/* Light: invert the slate scale so existing text-/bg-/border-slate-* classes adapt. */
+[data-theme="light"] {
+  --app-bg: #eef2f7;
+  --app-fg: #0f172a;
+  --panel-bg: rgba(255,255,255,0.92);
+  --panel-border: rgba(15,23,42,0.12);
+  --panel-shadow: 0 8px 24px -16px rgba(15,23,42,0.25);
+  --glass-bg: rgba(255,255,255,0.8);
+  --grid-line: rgba(15,23,42,0.05);
+  --scroll-thumb: #cbd5e1;
+
+  --color-white: #0f172a;
+  --color-black: #ffffff;
+  --color-slate-50: #020617;
+  --color-slate-100: #0f172a;
+  --color-slate-200: #1e293b;
+  --color-slate-300: #334155;
+  --color-slate-400: #475569;
+  --color-slate-500: #64748b;
+  --color-slate-600: #94a3b8;
+  --color-slate-700: #cbd5e1;
+  --color-slate-800: #e2e8f0;
+  --color-slate-900: #f8fafc;
+  --color-slate-950: #ffffff;
+
+  /* Accent text needs more contrast on white */
+  --color-cyan-200: #0e7490;   --color-cyan-300: #0891b2;   --color-cyan-400: #0e7490;
+  --color-sky-300: #0369a1;    --color-sky-400: #0284c7;
+  --color-blue-300: #1d4ed8;   --color-blue-400: #2563eb;
+  --color-emerald-200: #047857; --color-emerald-300: #059669; --color-emerald-400: #059669;
+  --color-amber-200: #b45309;  --color-amber-300: #d97706;  --color-amber-400: #d97706;
+  --color-rose-200: #be123c;   --color-rose-300: #e11d48;   --color-rose-400: #e11d48;
+  --color-purple-200: #6d28d9; --color-purple-300: #7c3aed; --color-purple-400: #7c3aed;
+}
+
 * { box-sizing: border-box; }
 
 html, body, #root { height: 100%; margin: 0; }
 
 body {
-  background: #000000;
-  color: #e2e8f0;
+  background: var(--app-bg);
+  background-attachment: fixed;
+  color: var(--app-fg);
   font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #243554; border-radius: 8px; }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
 .panel {
-  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0) 60%), rgba(10,10,10,0.85);
-  border: 1px solid rgba(148,163,184,0.14);
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0) 60%), var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 1rem;
-  box-shadow: 0 10px 30px -18px rgba(0,0,0,0.8);
+  box-shadow: var(--panel-shadow);
 }
 
 .glass {
-  background: rgba(10,10,10,0.7);
+  background: var(--glass-bg);
   border: 1px solid rgba(148,163,184,0.12);
   backdrop-filter: blur(8px);
 }
@@ -49,8 +114,8 @@ body {
 
 .grid-bg {
   background-image:
-    linear-gradient(rgba(148,163,184,0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148,163,184,0.03) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 36px 36px;
 }
 
