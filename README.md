@@ -1,4 +1,4 @@
-# CellGuard AI ⚡🛡️
+# CellGuard AI
 
 <div align="center">
   <img src="public/cellguard.jpeg" alt="CellGuard AI Logo" width="120" style="border-radius: 20%; margin-bottom: 12px;" />
@@ -15,56 +15,56 @@
 
 ---
 
-## 📌 Overview
+## Overview
 
-**CellGuard AI** is an industrial-grade, full-stack Battery Management System (BMS) platform that bridges edge embedded hardware with cloud analytics and conversational AI. 
+**CellGuard AI** is an industrial-grade, full-stack Battery Management System (BMS) platform that bridges edge embedded hardware with cloud analytics and conversational AI.
 
 Built for electric vehicles (EVs), grid energy storage systems (BESS), and lithium-ion battery packs, CellGuard AI provides real-time multi-cell voltage tracking, thermal runaway risk prediction, deterministic fault handling, cloud-to-hardware bidirectional relay actuation over MQTT, and an integrated DeepSeek-powered AI assistant with live BMS function-calling capabilities.
 
 ---
 
-## 🚀 Key Features
+## Key Features
 
-### 📊 Real-Time Telemetry & Monitoring
+### Real-Time Telemetry and Monitoring
 - **Cell-Level Voltage Monitoring**: Individual cell monitoring (up to 16 cells, with dynamic auto-detection for 3S packs and beyond), tracking min/max cell voltages and real-time voltage delta ($\Delta V$).
 - **Pack-Level Metrics**: Instantaneous voltage ($V$), current ($A$), net power ($W$), State of Charge ($\text{SOC}\%$) via Coulomb counting, and State of Health ($\text{SOH}\%$).
 - **Thermal Mapping**: Multi-probe thermal sensing array detecting temperature hotspots and gradient spikes.
 
-### 🕹️ Remote Actuation & Safety Relays
+### Remote Actuation and Safety Relays
 - **Bidirectional Control**: Direct cloud-to-firmware actuation toggling external **Load Contactor** and **Charger Relay** via AWS IoT Core MQTT commands.
-- **Fault Latching & Reset**: 16-bit deterministic hardware fault flags (Over-Voltage, Under-Voltage, Over-Current, Over-Temperature, Under-Temperature). Remote clearing with cloud ACK verification.
+- **Fault Latching and Reset**: 16-bit deterministic hardware fault flags (Over-Voltage, Under-Voltage, Over-Current, Over-Temperature, Under-Temperature). Remote clearing with cloud ACK verification.
 
-### 🧠 AI Fire-Risk Prediction & Heuristics
+### AI Fire-Risk Prediction and Heuristics
 - **Thermal Runaway Classifier**: Cloud-hosted Machine Learning model assessing multi-variate battery conditions (temperature gradients, voltage drop, internal resistance trends) to score fire risk (`SAFE`, `WARNING`, `DANGER`).
 - **Edge Heuristics**: Local risk calculation assessing real-time cell imbalance and high C-rate stress.
 
-### 🤖 Embedded AI Assistant (CellGuard Copilot)
+### Embedded AI Assistant (CellGuard Copilot)
 - **DeepSeek Integration**: Supports `deepseek-chat` (V3) and `deepseek-reasoner` (R1) with OpenAI-compatible streaming.
 - **Real-Time Function Calling**: The assistant autonomously queries live telemetry, decodes fault flags, inspects historical trends, and executes actuation commands with operator confirmation.
 - **Client-Side Security**: DeepSeek API keys are stored exclusively in `sessionStorage` (never persisted to disk or databases).
 
-### 📈 Historical Analytics & Automated Reporting
+### Historical Analytics and Automated Reporting
 - **Interactive Graphs**: Recharts-powered telemetry trends across 1-hour, 6-hour, 24-hour, and 7-day intervals.
-- **Automated PDF & CSV Reports**: One-click professional BMS health reports generated directly in the browser via `jsPDF` and `jspdf-autotable`.
+- **Automated PDF and CSV Reports**: One-click professional BMS health reports generated directly in the browser via `jsPDF` and `jspdf-autotable`.
 
-### 🎨 Modern UI & Theme Switcher
+### Modern UI and Theme Switcher
 - **Themes**: Pure OLED Black (`#000000`), Deep Midnight Navy, and High-Contrast Light Mode.
 - **Responsive Layout**: Designed with Tailwind CSS v4, Lucide icons, glassmorphism panels, and KaTeX mathematical rendering.
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```mermaid
 flowchart TD
-    subgraph Hardware_Plane ["⚡ Hardware / Edge Plane"]
+    subgraph Hardware_Plane ["Hardware / Edge Plane"]
         BatteryPack["Lithium Battery Pack (Cells 1-N)"] --> ADC["Adafruit ADS1115 / Sensors"]
         ADC --> Nano["Arduino Nano (Sub-Controller)"]
         Nano -- UART Binary Stream (38400 baud) --> ESP32["ESP32 Dual-Plane Gateway"]
         ESP32 -- Relays Actuation (Load/Charge) --> BatteryPack
     end
 
-    subgraph AWS_Cloud ["☁️ Cloud Data Plane (AWS)"]
+    subgraph AWS_Cloud ["Cloud Data Plane (AWS)"]
         ESP32 -- "mTLS X.509 (Port 443 ALPN)<br/>telemetry/bms/node_01" --> IoTCore["AWS IoT Core"]
         IoTCore -- "IoT SQL Rule" --> DynamoDB["Amazon DynamoDB<br/>(BmsTelemetry)"]
         APIGW["Amazon API Gateway (/bms)"] --> Lambda["AWS Lambda<br/>(lambda_function.py)"]
@@ -72,12 +72,12 @@ flowchart TD
         Lambda -- "commands/bms/node_01" --> IoTCore
     end
 
-    subgraph ML_AI_Plane ["🧠 AI & Intelligence Plane"]
+    subgraph ML_AI_Plane ["AI & Intelligence Plane"]
         RenderML["ML Fire Risk Service<br/>(Scikit-Learn on Render)"]
         DeepSeekAPI["DeepSeek AI API<br/>(V3 / R1 Streaming + Tools)"]
     end
 
-    subgraph Client_Plane ["💻 Application Plane"]
+    subgraph Client_Plane ["Application Plane"]
         WebApp["CellGuard AI Web Console<br/>(React 19 + Vite + Tailwind v4)"]
         WebApp <-->|REST GET/PATCH| APIGW
         WebApp <-->|Inference| RenderML
@@ -87,7 +87,7 @@ flowchart TD
 
 ---
 
-## 📦 Repository Structure
+## Repository Structure
 
 ```
 CellGuard-AI/
@@ -139,7 +139,7 @@ CellGuard-AI/
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Domain | Technologies |
 |---|---|
@@ -153,7 +153,7 @@ CellGuard-AI/
 
 ---
 
-## ⚙️ Telemetry Data Model
+## Telemetry Data Model
 
 Telemetry published from the ESP32 node into AWS IoT Core and stored in Amazon DynamoDB follows this normalized structure:
 
@@ -190,7 +190,7 @@ Telemetry published from the ESP32 node into AWS IoT Core and stored in Amazon D
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -225,9 +225,9 @@ Telemetry published from the ESP32 node into AWS IoT Core and stored in Amazon D
 
 ---
 
-## ☁️ Cloud & Firmware Setup
+## Cloud and Firmware Setup
 
-### 1. AWS Lambda & API Gateway
+### 1. AWS Lambda and API Gateway
 - Deploy `AWS Lambda/lambda_function.py` to an AWS Lambda function running Python 3.11+.
 - Attach an IAM role with:
   - `dynamodb:Query`, `dynamodb:GetItem`, `dynamodb:DeleteItem` on the `BmsTelemetry` DynamoDB table.
@@ -245,7 +245,7 @@ Telemetry published from the ESP32 node into AWS IoT Core and stored in Amazon D
 
 ---
 
-## 🛡️ Fault Flags Reference
+## Fault Flags Reference
 
 CellGuard AI decodes hardware fault bitmasks into readable alerts:
 
@@ -262,6 +262,6 @@ CellGuard AI decodes hardware fault bitmasks into readable alerts:
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
