@@ -212,12 +212,32 @@ struct BmsTelemetryPayload {
 #define MUX_CH_CELLCHG_1 13       /* C13 balanced-charger cell 2 (aux) */
 #define MUX_CH_CELLCHG_2 14       /* C14 balanced-charger cell 3 (aux) */
 
-/* Divider gains: multiply ADC-recovered volts to true circuit volts. */
-#define PACK_DIVIDER_RATIO    4.0f /* A2  : 3S combined divider */
-#define CELL_DIVIDER_RATIO    2.0f /* C0-2: cell divider (4.2V -> ~2.1V ADC) */
+/* Divider gains: multiply ADC-recovered volts to true circuit volts.
+ *
+ * MEASURED (DMM vs ADS1115 on the assembled pack):
+ *   cell 1 tap = 1.353 V on the ADC for a true 4.04 V cell
+ *   -> the physical divider is 3:1 (2R : R), NOT the 2:1 first assumed.
+ *   With a 2.0 ratio the firmware reported 2.705 V for that 4.04 V cell,
+ *   i.e. exactly 2/3 of reality.  Re-derive the ratio as V_dmm / V_adc
+ *   if a cell tap is ever re-laid out with different resistors.
+ */
+#define PACK_DIVIDER_RATIO    4.0f /* A2  : 3S combined divider (VERIFY on DMM) */
+#define CELL_DIVIDER_RATIO    3.0f /* C0-2: cell divider (4.04V -> ~1.35V ADC) */
 #define CURRENT_DIVIDER_RATIO 4.0f /* A1  : battery input divider at sensor */
 
-/* Current sensor linear model (A0):  I[A] = (Vout - zero) * A_per_V */
+/* Current sensor linear model (A0):  I[A] = (Vout - zero) * A_per_V
+ *
+ * A ratiometric Hall sensor idles at ~Vcc/2, so its zero point tracks the
+ * board's own supply rail rather than the datasheet 5.0 V assumption.
+ * On this board A0 idles at 1.769 V; assuming 2.50 V made the firmware
+ * report -7.31 A of phantom discharge while the real current was 0 A.
+ *
+ * CURRENT_ZERO_VOLT is only a FALLBACK: calibrateCurrentZero() measures the
+ * true idle level at boot (both relays open) and overrides it.  If a known
+ * reference load shows a *proportional* error instead, the sensitivity is
+ * wrong - e.g. a sensor fed from a ~3.54 V rail is ratiometric, so an
+ * ACS712-20A would deliver ~70.8 mV/A (14.1 A/V) instead of 100 mV/A.
+ */
 #define CURRENT_ZERO_VOLT    2.50f
 #define CURRENT_AMP_PER_VOLT 10.0f
 
@@ -250,6 +270,20 @@ uint16_t rxIndex = 0;
 
 constexpr uint32_t ANALOG_READ_INTERVAL_MS  = 1000;
 constexpr uint32_t AWS_PUBLISH_INTERVAL_MS   = 15000;
+
+/* Number of averaged passes used by the current-sensor auto-zero. */
+constexpr uint8_t CURRENT_ZERO_CAL_SAMPLES = 16;
+/* Auto-zero runs at boot only if it lands inside this window; a ratiometric
+ * sensor fed from a healthy rail idles near half-rail, so anything far
+ * outside 0.5..3.0 V means the sensor is unpowered/wiring is open. */
+constexpr float CURRENT_ZERO_CAL_MIN_V = 0.50f;
+constexpr float CURRENT_ZERO_CAL_MAX_V = 3.00f;
+/* Set to 0 to disable boot-time auto-zero and rely on CURRENT_ZERO_VOLT. */
+#define CURRENT_AUTOZERO_ON_BOOT 1
+
+/* Runtime zero-current reference for A0.  Seeded from the fallback
+ * constant, then replaced by calibrateCurrentZero() at boot / on demand. */
+static float g_currentZeroVolt = CURRENT_ZERO_VOLT;
 
 uint32_t lastAnalogRead = 0;
 uint32_t lastAwsPublish = 0;
@@ -322,6 +356,7 @@ MockBms bms;
  * ============================================================
  */
 void updateDerivedValues();
+bool calibrateCurrentZero();
 void integrateEnergy(float dtSec);
 void updateFaultHistory();
 void sendSnapshotToNano();
@@ -353,6 +388,45 @@ static void muxSelect(uint8_t channel) {
 static float readMuxChannel(uint8_t channel) {
     muxSelect(channel);
     return readAdcChannel(ADS_CH_MUX);
+}
+
+/* ============================================================
+ * CURRENT SENSOR AUTO-ZERO (A0)
+ * ============================================================
+ * Measures the sensor's true idle output with no current flowing and
+ * installs it as the zero reference.  MUST only be called while both the
+ * load and charger relays are open, otherwise the reading is not a true
+ * zero.  Returns true when a new zero was accepted.
+ */
+bool calibrateCurrentZero() {
+    if (bms.loadRelay || bms.chargerRelay) {
+        Serial.println("[CAL] Current zero SKIPPED - a relay is still closed.");
+        return false;
+    }
+
+    float sum = 0.0f;
+    float lo  =  1e9f;
+    float hi  = -1e9f;
+    for (uint8_t i = 0; i < CURRENT_ZERO_CAL_SAMPLES; i++) {
+        float v = readAdcChannel(ADS_CH_A0);
+        sum += v;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+    }
+    float avg = sum / (float)CURRENT_ZERO_CAL_SAMPLES;
+
+    if (avg < CURRENT_ZERO_CAL_MIN_V || avg > CURRENT_ZERO_CAL_MAX_V) {
+        Serial.printf("[CAL] Idle A0 = %.3f V is outside %.2f..%.2f V - sensor "
+                      "unpowered or wiring open. Keeping %.3f V zero.\n",
+                      avg, CURRENT_ZERO_CAL_MIN_V, CURRENT_ZERO_CAL_MAX_V,
+                      g_currentZeroVolt);
+        return false;
+    }
+
+    Serial.printf("[CAL] Idle A0 = %.3f V (spread %.3f V) -> new zero. "
+                  "Previous zero was %.3f V.\n", avg, hi - lo, g_currentZeroVolt);
+    g_currentZeroVolt = avg;
+    return true;
 }
 
 void initAnalogHardware() {
@@ -417,14 +491,19 @@ void updateAnalogTelemetry() {
     lastAnalogRead = now;
 
     // --- Direct ADC lines (ADS1115) ------------------------------------
-    float packV  = readAdcChannel(ADS_CH_A2) * PACK_DIVIDER_RATIO;    // A2 3S pack
-    float curOut = readAdcChannel(ADS_CH_A0);                          // A0 sensor out
-    float curVin = readAdcChannel(ADS_CH_A1) * CURRENT_DIVIDER_RATIO;  // A1 sensor input
+    float packVraw = readAdcChannel(ADS_CH_A2);
+    float curOut   = readAdcChannel(ADS_CH_A0);                       // A0 sensor out
+    float curVinraw= readAdcChannel(ADS_CH_A1);
+    float packV  = packVraw * PACK_DIVIDER_RATIO;                      // A2 3S pack
+    float curVin = curVinraw * CURRENT_DIVIDER_RATIO;                  // A1 sensor input
 
     // --- Mux channels (via A3) -------------------------------------------
-    float c1 = readMuxChannel(MUX_CH_CELL0) * CELL_DIVIDER_RATIO;
-    float c2 = readMuxChannel(MUX_CH_CELL1) * CELL_DIVIDER_RATIO;
-    float c3 = readMuxChannel(MUX_CH_CELL2) * CELL_DIVIDER_RATIO;
+    float c1raw = readMuxChannel(MUX_CH_CELL0);
+    float c2raw = readMuxChannel(MUX_CH_CELL1);
+    float c3raw = readMuxChannel(MUX_CH_CELL2);
+    float c1 = c1raw * CELL_DIVIDER_RATIO;
+    float c2 = c2raw * CELL_DIVIDER_RATIO;
+    float c3 = c3raw * CELL_DIVIDER_RATIO;
     float t1 = readMuxChannel(MUX_CH_RTD0);
     float t2 = readMuxChannel(MUX_CH_RTD1);
     float t3 = readMuxChannel(MUX_CH_RTD2);
@@ -442,7 +521,7 @@ void updateAnalogTelemetry() {
     bms.cellVoltage[2] = c3;
 
     bms.packVoltage = packV;
-    bms.packCurrent = (curOut - CURRENT_ZERO_VOLT) * CURRENT_AMP_PER_VOLT;
+    bms.packCurrent = (curOut - g_currentZeroVolt) * CURRENT_AMP_PER_VOLT;
 
     bms.temperature[0] = RTD_OFFSET_C + t1 * RTD_DEG_PER_VOLT;
     bms.temperature[1] = RTD_OFFSET_C + t2 * RTD_DEG_PER_VOLT;
@@ -467,10 +546,14 @@ void updateAnalogTelemetry() {
     updateFaultHistory();
     updateDerivedValues();
 
+    /* The "raw=" group is pre-scaler ADC volts: divide a DMM reading by the
+     * matching raw value to re-derive that channel's true divider ratio. */
     Serial.printf("[ADC] pack=%.2f c1=%.3f c2=%.3f c3=%.3f I=%.2f T=%.1f/%.1f/%.1f | 2S=%.2f/%.2f chg=%.2f/%.2f/%.2f vin=%.2f\n",
                   packV, c1, c2, c3, bms.packCurrent,
                   bms.temperature[0], bms.temperature[1], bms.temperature[2],
                   c2sA, c2sB, ccA, ccB, ccC, curVin);
+    Serial.printf("[ADC] raw cells=%.3f/%.3f/%.3f  packA2=%.3f  A0=%.3f zero=%.3f  A1=%.3f\n",
+                  c1raw, c2raw, c3raw, packVraw, curOut, g_currentZeroVolt, curVinraw);
 }
 
 /* ============================================================
@@ -831,6 +914,13 @@ void setup() {
     initialiseSystem();
 
     Serial.println("[BOOT] ESP32 BMS Gateway initialized.");
+
+#if CURRENT_AUTOZERO_ON_BOOT
+    /* Both relays are open here (initialiseSystem() forces them false), so
+     * this is a genuine zero-current reading.  Doing it before Wi-Fi keeps
+     * the ADC chain free of radio activity during the averaging passes. */
+    calibrateCurrentZero();
+#endif
 
     connectWiFi();
     connectAWS();
