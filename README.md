@@ -26,7 +26,7 @@ Built for electric vehicles (EVs), grid energy storage systems (BESS), and lithi
 ## Key Features
 
 ### Real-Time Telemetry and Monitoring
-- **Cell-Level Voltage Monitoring**: Individual cell monitoring (up to 16 cells, with dynamic auto-detection for 3S packs and beyond), tracking min/max cell voltages and real-time voltage delta ($\Delta V$).
+- **Dual-Multiplexer Differential Cell Monitoring**: Overcomes single-ended ADC negative potential limitations by routing common positive voltage through resistive dividers to ADS1115 while a secondary multiplexer sequentially connects negative cell terminals to ground reference. Accurately tracks individual cell voltages, min/max spread, and voltage delta ($\Delta V$).
 - **Pack-Level Metrics**: Instantaneous voltage ($V$), current ($A$), net power ($W$), State of Charge ($\text{SOC}\%$) via Coulomb counting, and State of Health ($\text{SOH}\%$).
 - **Thermal Mapping**: Multi-probe thermal sensing array detecting temperature hotspots and gradient spikes.
 
@@ -58,10 +58,15 @@ Built for electric vehicles (EVs), grid energy storage systems (BESS), and lithi
 ```mermaid
 flowchart TD
     subgraph Hardware_Plane ["Hardware / Edge Plane"]
-        BatteryPack["Lithium Battery Pack (Cells 1-N)"] --> ADC["Adafruit ADS1115 / Sensors"]
-        ADC --> Nano["Arduino Nano (Sub-Controller)"]
-        Nano -- UART Binary Stream (38400 baud) --> ESP32["ESP32 Dual-Plane Gateway"]
-        ESP32 -- Relays Actuation (Load/Charge) --> BatteryPack
+        BatteryPack["Lithium Battery Pack (3S Cells)"]
+        BatteryPack -- "Positive Signal / RTDs" --> Mux1["Primary Signal MUX (CD74HC4067)"]
+        BatteryPack -- "Negative Terminals" --> Mux2["Secondary GND-Switch MUX (CD74HC4067)"]
+        Mux1 --> ADC["Adafruit ADS1115 (16-bit ADC)"]
+        Mux2 -- "Sequential GND Reference" --> ADC
+        ADC --> ESP32["ESP32 Dual-Plane Gateway"]
+        ESP32 -- "Shared Select S0-S3 & Enables" --> Mux1 & Mux2
+        ESP32 -- "UART (38400 baud)" --> Nano["Arduino Nano (Sub-Controller)"]
+        ESP32 -- "Relays Actuation (Load/Charge)" --> BatteryPack
     end
 
     subgraph AWS_Cloud ["Cloud Data Plane (AWS)"]
@@ -236,6 +241,11 @@ Telemetry published from the ESP32 node into AWS IoT Core and stored in Amazon D
 
 ### 2. ESP32 Firmware
 - Open `ESP32_test_aws` in PlatformIO.
+- **Multiplexer Pinout**:
+  - Shared Select Lines: `MUX_S0` (GPIO 4), `MUX_S1` (GPIO 5), `MUX_S2` (GPIO 18), `MUX_S3` (GPIO 19).
+  - Primary Signal MUX Enable: `MUX1_EN_PIN` (GPIO 23, active LOW).
+  - Secondary Ground-Switch MUX Enable: `MUX2_EN_PIN` (GPIO 25, active LOW).
+  - Cell Negative Channels (MUX 2): C0 (Cell 1 negative to GND), C1 (Cell 2 negative to GND), C2 (Cell 3 negative to GND).
 - Place your AWS IoT X.509 device certificate, private key, and Amazon Root CA 1 in the credential headers or secure storage.
 - Update Wi-Fi SSID and Password in `ESP32_test_aws/src/main.cpp`.
 - Build and flash to your ESP32 board over USB:

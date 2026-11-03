@@ -156,23 +156,45 @@ struct BmsTelemetryPayload {
 #define UART_TX_PIN 17
 
 /* ============================================================
- * ANALOG ADC + 16-CHANNEL MUX PIN MAP
+ * ANALOG ADC + DUAL-PLANE MUX PIN MAP
  * ============================================================
  * Analogue acquisition is handled by an external I2C ADS1115
- * (16-bit, 4-ch).  The ESP32's own ADC1/ADC2 pins are NOT used
- * for the signal chain.  The 4067 mux select pins (GPIO4/5/18/19)
- * remain plain digital outputs and are safe to drive while Wi-Fi
- * is active.
+ * (16-bit, 4-ch). The ESP32's own ADC1/ADC2 pins are NOT used
+ * for the signal chain.
+ *
+ * Dual-Multiplexer Ground-Referencing Architecture:
+ * Single-ended ADCs cannot measure negative voltages relative to system ground.
+ * To resolve this:
+ * 1. MUX 1 (Signal MUX, CD74HC4067):
+ *    - Connects common positive / signal taps, RTD comparators, and aux lines to ADS1115 A3.
+ *    - Enabled via MUX1_EN_PIN (active LOW).
+ * 2. MUX 2 (Ground-Reference Switch MUX, CD74HC4067 / 74HC4051):
+ *    - Connects individual cell negative divider taps to system ground reference sequentially.
+ *    - Enabled via MUX2_EN_PIN (active LOW).
+ *    - Channels:
+ *        C0: Cell 1 negative terminal / reference ground
+ *        C1: Cell 2 negative terminal / reference ground
+ *        C2: Cell 3 negative terminal / reference ground
+ * 3. Shared Select Pins:
+ *    - S0=GPIO4, S1=GPIO5, S2=GPIO18, S3=GPIO19 drive both MUX address inputs.
+ *    - When measuring cells: MUX2 selects the cell negative tap to ground while ADS1115
+ *      reads the common positive terminal on A3 through the divider.
+ *    - When measuring non-cell sensors (RTDs, aux): MUX2 is disabled (high-Z) to prevent
+ *      unintended ground shorts.
  *
  * Wiring (matches I2C ADC interconnect map):
  *   I2C        : SDA=GPIO21  SCL=GPIO22  (ADS1115 addr 0x48)
  *   ADS A0     : current sensor analog output
  *   ADS A1     : current sensor battery-input divider (reference)
  *   ADS A2     : 3S combined pack voltage divider
- *   ADS A3     : CD74HC4067 'Signal' output (cells + RTD comparators)
- *   Mux select : S0=GPIO4  S1=GPIO5  S2=GPIO18  S3=GPIO19
- *     C0-C2 : 3S individual cell dividers   C4-C6 : RTD comparators
- *     C9-C11: 2S individual cells (aux)      C12-C16: balanced charger (aux)
+ *   ADS A3     : MUX Signal output (cells + RTD comparators)
+ *   Mux Select : S0=GPIO4  S1=GPIO5  S2=GPIO18  S3=GPIO19 (shared)
+ *   Mux Enable : MUX1_EN_PIN=GPIO23 (Primary Signal Mux /EN, active LOW)
+ *                MUX2_EN_PIN=GPIO25 (Secondary GND Mux /EN, active LOW)
+ *     MUX1 C4-C6 : RTD comparators
+ *     MUX1 C9-C11: 2S individual cells (aux)
+ *     MUX1 C12-C14: balanced charger (aux)
+ *     MUX2 C0-C2 : Cell 1-3 negative terminals (ground-switched)
  *
  * Every *_RATIO / *_VOLT / *_PER_VOLT constant below is a documented
  * ASSUMPTION that MUST be matched to the physical divider gains and
@@ -188,29 +210,42 @@ struct BmsTelemetryPayload {
 #define ADS_CH_A3    3    /* ADS1115 A3 : 4067 Signal output (cells / RTD) */
 #define ADS_CH_MUX   ADS_CH_A3
 
-/* ADS1115 is configured with GAIN_ONE, i.e. +/-4.096 V full scale.
+/* ADS1115 is configured with GAIN_ONE, i.e. +/-4.096 V single-ended range.
  * ADC_REF_VOLTAGE below is only used as an upper "sensor slammed to
  * rail" fault threshold, not for raw->volt scaling. */
 #define ADC_REF_VOLTAGE    3.3f    /* sensor validity upper rail (V) */
 #define ADC_MUX_SWITCH_US  2500U   /* 4067 settle after channel change */
 #define ADC_SAMPLES        8       /* single-ended reads averaged per value */
 
-#define MUX_S0 4                  /* d4   (LSB) */
-#define MUX_S1 5                  /* d5        */
-#define MUX_S2 18                 /* d18       */
-#define MUX_S3 19                 /* d19  (MSB) */
+#define MUX_S0 4                  /* d4   (LSB) - Shared select line */
+#define MUX_S1 5                  /* d5        - Shared select line */
+#define MUX_S2 18                 /* d18       - Shared select line */
+#define MUX_S3 19                 /* d19  (MSB) - Shared select line */
 
-#define MUX_CH_CELL0   0          /* C0  cell 1 divider */
-#define MUX_CH_CELL1   1          /* C1  cell 2 divider */
-#define MUX_CH_CELL2   2          /* C2  cell 3 divider */
-#define MUX_CH_RTD0    4          /* C4  RTD comparator 1 */
-#define MUX_CH_RTD1    5          /* C5  RTD comparator 2 */
-#define MUX_CH_RTD2    6          /* C6  RTD comparator 3 */
+#ifndef MUX1_EN_PIN
+#define MUX1_EN_PIN   23          /* Primary MUX /EN (active LOW): signal path */
+#endif
+#ifndef MUX2_EN_PIN
+#define MUX2_EN_PIN   25          /* Secondary MUX /EN (active LOW): ground switch */
+#endif
+
+/* Primary MUX channels (MUX 1) */
+#define MUX_CH_CELL0     0        /* C0  cell 1 tap (legacy / direct) */
+#define MUX_CH_CELL1     1        /* C1  cell 2 tap */
+#define MUX_CH_CELL2     2        /* C2  cell 3 tap */
+#define MUX_CH_RTD0      4        /* C4  RTD comparator 1 */
+#define MUX_CH_RTD1      5        /* C5  RTD comparator 2 */
+#define MUX_CH_RTD2      6        /* C6  RTD comparator 3 */
 #define MUX_CH_CELL2S_0  9        /* C9  2S cell A (aux) */
-#define MUX_CH_CELL2S_1 10        /* C10 2S cell B (aux) */
+#define MUX_CH_CELL2S_1  10       /* C10 2S cell B (aux) */
 #define MUX_CH_CELLCHG_0 12       /* C12 balanced-charger cell 1 (aux) */
 #define MUX_CH_CELLCHG_1 13       /* C13 balanced-charger cell 2 (aux) */
 #define MUX_CH_CELLCHG_2 14       /* C14 balanced-charger cell 3 (aux) */
+
+/* Secondary MUX channels (MUX 2): negative terminal ground switches */
+#define MUX2_CH_CELL0_GND 0       /* C0  Cell 1 negative terminal to GND */
+#define MUX2_CH_CELL1_GND 1       /* C1  Cell 2 negative terminal to GND */
+#define MUX2_CH_CELL2_GND 2       /* C2  Cell 3 negative terminal to GND */
 
 /* Divider gains: multiply ADC-recovered volts to true circuit volts.
  *
@@ -377,17 +412,48 @@ static float readAdcChannel(uint8_t channel) {
     return sum / (float)ADC_SAMPLES;
 }
 
-static void muxSelect(uint8_t channel) {
+static void muxSetAddress(uint8_t channel) {
     digitalWrite(MUX_S0, channel & 0x01);
     digitalWrite(MUX_S1, (channel >> 1) & 0x01);
     digitalWrite(MUX_S2, (channel >> 2) & 0x01);
     digitalWrite(MUX_S3, (channel >> 3) & 0x01);
+}
+
+/* Backward-compatible muxSelect: sets address on shared S0..S3 bus */
+static void muxSelect(uint8_t channel) {
+    muxSetAddress(channel);
     delayMicroseconds(ADC_MUX_SWITCH_US);
 }
 
-static float readMuxChannel(uint8_t channel) {
-    muxSelect(channel);
+/* Reads a channel from Primary MUX (MUX 1) with Secondary GND MUX disabled */
+static float readPrimaryMux(uint8_t channel) {
+    digitalWrite(MUX2_EN_PIN, HIGH); // Disable secondary ground-switching MUX
+    digitalWrite(MUX1_EN_PIN, LOW);  // Enable primary signal MUX
+    muxSetAddress(channel);
+    delayMicroseconds(ADC_MUX_SWITCH_US);
     return readAdcChannel(ADS_CH_MUX);
+}
+
+/* Reads cell voltage by switching the cell's negative terminal to GND reference via MUX 2
+ * and measuring common positive potential on ADS1115 A3 via divider */
+static float readCellWithMuxGround(uint8_t gndChannel) {
+    // Enable MUX 1 for positive signal path & MUX 2 to ground selected negative terminal
+    digitalWrite(MUX1_EN_PIN, LOW);
+    digitalWrite(MUX2_EN_PIN, LOW);
+    muxSetAddress(gndChannel);
+    delayMicroseconds(ADC_MUX_SWITCH_US);
+
+    float raw = readAdcChannel(ADS_CH_MUX);
+
+    // Isolate secondary ground switch after reading to prevent unwanted current loops
+    digitalWrite(MUX2_EN_PIN, HIGH);
+    delayMicroseconds(100);
+
+    return raw;
+}
+
+static float readMuxChannel(uint8_t channel) {
+    return readPrimaryMux(channel);
 }
 
 /* ============================================================
@@ -442,12 +508,20 @@ void initAnalogHardware() {
         Serial.println("[ADC] ADS1115 initialized (gain +/-4.096V @ 860 SPS).");
     }
 
-    // 4067 mux select outputs are plain digital pins; keep them.
+    // Shared 4067 mux select outputs
     pinMode(MUX_S0, OUTPUT);
     pinMode(MUX_S1, OUTPUT);
     pinMode(MUX_S2, OUTPUT);
     pinMode(MUX_S3, OUTPUT);
-    muxSelect(0);
+
+    // Dual MUX enable controls (active LOW)
+    pinMode(MUX1_EN_PIN, OUTPUT);
+    pinMode(MUX2_EN_PIN, OUTPUT);
+
+    // Default state: Primary MUX enabled, Secondary GND MUX disabled (isolated)
+    digitalWrite(MUX1_EN_PIN, LOW);
+    digitalWrite(MUX2_EN_PIN, HIGH);
+    muxSetAddress(0);
 }
 
 /* ============================================================
@@ -497,23 +571,27 @@ void updateAnalogTelemetry() {
     float packV  = packVraw * PACK_DIVIDER_RATIO;                      // A2 3S pack
     float curVin = curVinraw * CURRENT_DIVIDER_RATIO;                  // A1 sensor input
 
-    // --- Mux channels (via A3) -------------------------------------------
-    float c1raw = readMuxChannel(MUX_CH_CELL0);
-    float c2raw = readMuxChannel(MUX_CH_CELL1);
-    float c3raw = readMuxChannel(MUX_CH_CELL2);
+    // --- Cell voltage acquisition via Secondary Ground-Switching MUX ---
+    // MUX2 sequentially shorts each cell negative terminal (Ch 0, 1, 2) to GND,
+    // measuring the common positive potential on ADS1115 A3 through the divider.
+    float c1raw = readCellWithMuxGround(MUX2_CH_CELL0_GND);
+    float c2raw = readCellWithMuxGround(MUX2_CH_CELL1_GND);
+    float c3raw = readCellWithMuxGround(MUX2_CH_CELL2_GND);
     float c1 = c1raw * CELL_DIVIDER_RATIO;
     float c2 = c2raw * CELL_DIVIDER_RATIO;
     float c3 = c3raw * CELL_DIVIDER_RATIO;
-    float t1 = readMuxChannel(MUX_CH_RTD0);
-    float t2 = readMuxChannel(MUX_CH_RTD1);
-    float t3 = readMuxChannel(MUX_CH_RTD2);
+
+    // --- Primary MUX channels (RTD comparators + Aux) with MUX2 disabled ---
+    float t1 = readPrimaryMux(MUX_CH_RTD0);
+    float t2 = readPrimaryMux(MUX_CH_RTD1);
+    float t3 = readPrimaryMux(MUX_CH_RTD2);
 
     // --- Aux channels (2S + balanced charger), monitored on serial -------
-    float c2sA = readMuxChannel(MUX_CH_CELL2S_0) * CELL_DIVIDER_RATIO;
-    float c2sB = readMuxChannel(MUX_CH_CELL2S_1) * CELL_DIVIDER_RATIO;
-    float ccA  = readMuxChannel(MUX_CH_CELLCHG_0) * CELL_DIVIDER_RATIO;
-    float ccB  = readMuxChannel(MUX_CH_CELLCHG_1) * CELL_DIVIDER_RATIO;
-    float ccC  = readMuxChannel(MUX_CH_CELLCHG_2) * CELL_DIVIDER_RATIO;
+    float c2sA = readPrimaryMux(MUX_CH_CELL2S_0) * CELL_DIVIDER_RATIO;
+    float c2sB = readPrimaryMux(MUX_CH_CELL2S_1) * CELL_DIVIDER_RATIO;
+    float ccA  = readPrimaryMux(MUX_CH_CELLCHG_0) * CELL_DIVIDER_RATIO;
+    float ccB  = readPrimaryMux(MUX_CH_CELLCHG_1) * CELL_DIVIDER_RATIO;
+    float ccC  = readPrimaryMux(MUX_CH_CELLCHG_2) * CELL_DIVIDER_RATIO;
 
     // --- Write the primary 3S pack into the telemetry model --------------
     bms.cellVoltage[0] = c1;
