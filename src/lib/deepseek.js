@@ -1,14 +1,140 @@
 // -----------------------------------------------------------------------
 // DeepSeek client (OpenAI-compatible chat completions, streaming + function
-// calling). The API key lives ONLY in sessionStorage -> cleared on tab close.
+// calling). Supports deepseek-chat (V3), deepseek-reasoner (R1), deepseek-flash,
+// and deepseek-v4-pro models.
 // -----------------------------------------------------------------------
 
 export const DEEPSEEK_CHAT_ENDPOINT = "https://api.deepseek.com/chat/completions";
+
+export const AVAILABLE_MODELS = [
+  {
+    id: "deepseek-chat",
+    name: "deepseek-chat (DeepSeek-V3)",
+    desc: "Fast, versatile, full tool-calling & function execution (Recommended)",
+    supportsTools: true,
+  },
+  {
+    id: "deepseek-reasoner",
+    name: "deepseek-reasoner (DeepSeek-R1)",
+    desc: "Advanced chain-of-thought mathematical and battery reasoning",
+    supportsTools: false,
+  },
+  {
+    id: "deepseek-flash",
+    name: "deepseek-flash (DeepSeek-V4.1 Flash)",
+    desc: "High throughput, 1M token context window, tool-calling support",
+    supportsTools: true,
+  },
+  {
+    id: "deepseek-v4-pro",
+    name: "deepseek-v4-pro (DeepSeek-V4 Pro)",
+    desc: "Flagship deep reasoning and complex diagnostic model",
+    supportsTools: true,
+  },
+];
+
 export const DEFAULT_MODEL = "deepseek-chat";
 
 const KEY_SESSION = "cellguard.deepseek.key";
 const MODEL_SESSION = "cellguard.deepseek.model";
 const PROMPT_SESSION = "cellguard.deepseek.prompt";
+
+/**
+ * Sanitizes an API key string:
+ * - Trims leading/trailing whitespace and newlines
+ * - Strips accidental 'Bearer ' or 'Authorization: ' prefixes
+ * - Removes enclosing quotes
+ */
+export function sanitizeKey(k) {
+  if (!k) return "";
+  let key = String(k).trim();
+  if (key.toLowerCase().startsWith("authorization:")) {
+    key = key.slice(14).trim();
+  }
+  if (key.toLowerCase().startsWith("bearer ")) {
+    key = key.slice(7).trim();
+  }
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+    key = key.slice(1, -1).trim();
+  }
+  return key;
+}
+
+function storageGet(key) {
+  try {
+    const val = window.sessionStorage.getItem(key);
+    if (val) return val;
+  } catch {}
+  try {
+    const val = window.localStorage.getItem(key);
+    if (val) return val;
+  } catch {}
+  return null;
+}
+
+function storageSet(key, val) {
+  try {
+    if (val) {
+      window.sessionStorage.setItem(key, val);
+      window.localStorage.setItem(key, val);
+    } else {
+      window.sessionStorage.removeItem(key);
+      window.localStorage.removeItem(key);
+    }
+  } catch {}
+}
+
+export function getApiKey() {
+  const stored = storageGet(KEY_SESSION);
+  if (stored) return sanitizeKey(stored);
+  try {
+    const envKey = import.meta.env?.VITE_DEEPSEEK_API_KEY;
+    if (envKey) return sanitizeKey(envKey);
+  } catch {}
+  return "";
+}
+
+export function setApiKey(key) {
+  const clean = sanitizeKey(key);
+  storageSet(KEY_SESSION, clean);
+}
+
+export function clearApiKey() {
+  storageSet(KEY_SESSION, "");
+}
+
+export function hasApiKey() {
+  return Boolean(getApiKey());
+}
+
+export function getModel() {
+  return storageGet(MODEL_SESSION) || DEFAULT_MODEL;
+}
+
+export function setModel(m) {
+  storageSet(MODEL_SESSION, m ? m.trim() : DEFAULT_MODEL);
+}
+
+export function getSystemPrompt() {
+  return storageGet(PROMPT_SESSION) || DEFAULT_SYSTEM_PROMPT;
+}
+
+export function setSystemPrompt(p) {
+  storageSet(PROMPT_SESSION, p ? p.trim() : "");
+}
+
+export function resetSystemPrompt() {
+  storageSet(PROMPT_SESSION, DEFAULT_SYSTEM_PROMPT);
+}
+
+function authHeaders(apiKeyOverride) {
+  const key = sanitizeKey(apiKeyOverride) || getApiKey();
+  if (!key) throw new Error("DeepSeek API key is not set. Add one in Settings > AI Assistant.");
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${key}`,
+  };
+}
 
 export const DEFAULT_SYSTEM_PROMPT = `You are CellGuard Copilot, an expert battery-management assistant
 embedded in a live BMS dashboard. You help operators understand battery state,
@@ -33,72 +159,36 @@ FORMATTING RULES:
 - Wrap code/commands in backticks. Never wrap the whole answer in a code fence.
 - Keep answers short and skimmable.`;
 
-function sessionGet(key) {
-  try {
-    return window.sessionStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-function sessionSet(key, val) {
-  try {
-    if (val) window.sessionStorage.setItem(key, val);
-    else window.sessionStorage.removeItem(key);
-  } catch {}
-}
-
-export function getApiKey() {
-  return sessionGet(KEY_SESSION) || "";
-}
-export function setApiKey(key) {
-  sessionSet(KEY_SESSION, key ? key.trim() : "");
-}
-export function clearApiKey() {
-  sessionSet(KEY_SESSION, "");
-}
-export function hasApiKey() {
-  return Boolean(getApiKey());
-}
-export function getModel() {
-  return sessionGet(MODEL_SESSION) || DEFAULT_MODEL;
-}
-export function setModel(m) {
-  sessionSet(MODEL_SESSION, m ? m.trim() : "");
-}
-export function getSystemPrompt() {
-  return sessionGet(PROMPT_SESSION) || DEFAULT_SYSTEM_PROMPT;
-}
-export function setSystemPrompt(p) {
-  sessionSet(PROMPT_SESSION, p ? p.trim() : "");
-}
-export function resetSystemPrompt() {
-  sessionSet(PROMPT_SESSION, DEFAULT_SYSTEM_PROMPT);
-}
-
-function authHeaders() {
-  const key = getApiKey();
-  if (!key) throw new Error("DeepSeek API key is not set. Add one in Settings > AI Assistant.");
-  return { "Content-Type": "application/json", Authorization: `Bearer ${key}` };
-}
-
 // Non-streaming call (Settings connection test + report generation).
-export async function callChatCompletion({ messages, tools, toolChoice }) {
-  const body = { model: getModel(), messages, temperature: 0.3, max_tokens: 2048, stream: false };
-  if (tools && tools.length) {
+export async function callChatCompletion({ messages, tools, toolChoice, model, apiKey }) {
+  const selectedModel = model || getModel();
+  const body = {
+    model: selectedModel,
+    messages,
+    temperature: selectedModel === "deepseek-reasoner" ? undefined : 0.3,
+    max_tokens: 2048,
+    stream: false,
+  };
+  // deepseek-reasoner does not support tools/function calling
+  if (tools && tools.length && selectedModel !== "deepseek-reasoner") {
     body.tools = tools;
     body.tool_choice = toolChoice || "auto";
   }
+
   const res = await fetch(DEEPSEEK_CHAT_ENDPOINT, {
     method: "POST",
-    headers: authHeaders(),
+    headers: authHeaders(apiKey),
     body: JSON.stringify(body),
   });
+
   if (!res.ok) {
     let detail = "";
     try {
       const e = await res.json();
-      detail = e?.error?.message || JSON.stringify(e);
-    } catch {}
+      detail = e?.error?.message || e?.message || JSON.stringify(e);
+    } catch {
+      detail = res.statusText;
+    }
     throw new Error(`DeepSeek error ${res.status}${detail ? `: ${detail}` : ""}`);
   }
   return res.json();
@@ -106,23 +196,24 @@ export async function callChatCompletion({ messages, tools, toolChoice }) {
 
 // Streaming call: yields token deltas via onDelta; returns the assembled
 // assistant message (content + tool_calls) and token usage.
-export async function callChatCompletionStream({ messages, tools, signal, onDelta }) {
+export async function callChatCompletionStream({ messages, tools, signal, onDelta, model, apiKey }) {
+  const selectedModel = model || getModel();
   const body = {
-    model: getModel(),
+    model: selectedModel,
     messages,
-    temperature: 0.3,
+    temperature: selectedModel === "deepseek-reasoner" ? undefined : 0.3,
     max_tokens: 2048,
     stream: true,
     stream_options: { include_usage: true },
   };
-  if (tools && tools.length) {
+  if (tools && tools.length && selectedModel !== "deepseek-reasoner") {
     body.tools = tools;
     body.tool_choice = "auto";
   }
 
   const res = await fetch(DEEPSEEK_CHAT_ENDPOINT, {
     method: "POST",
-    headers: authHeaders(),
+    headers: authHeaders(apiKey),
     body: JSON.stringify(body),
     signal,
   });
@@ -131,8 +222,10 @@ export async function callChatCompletionStream({ messages, tools, signal, onDelt
     let detail = "";
     try {
       const e = await res.json();
-      detail = e?.error?.message || JSON.stringify(e);
-    } catch {}
+      detail = e?.error?.message || e?.message || JSON.stringify(e);
+    } catch {
+      detail = res.statusText;
+    }
     throw new Error(`DeepSeek error ${res.status}${detail ? `: ${detail}` : ""}`);
   }
 

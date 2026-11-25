@@ -1,11 +1,15 @@
 import { useState } from "react";
-import { Save, RefreshCcw, Plug, Wifi, Cloud, Sparkles, Trash2, Palette, Check } from "lucide-react";
+import { Save, RefreshCcw, Plug, Wifi, Cloud, Sparkles, Trash2, Palette, Check, Eye, EyeOff } from "lucide-react";
 import { Card, Pill, Readout } from "../components/ui";
 import { useDevice } from "../context/DeviceContext";
 import { useTelemetryCtx } from "../context/TelemetryContext";
 import { fmtUptime, ago } from "../lib/format";
 import { THEMES, getTheme, setTheme } from "../lib/theme";
-import { getApiKey, setApiKey, clearApiKey, getModel, setModel, getSystemPrompt, setSystemPrompt, resetSystemPrompt, callChatCompletion, DEFAULT_MODEL } from "../lib/deepseek";
+import {
+  getApiKey, setApiKey, clearApiKey, getModel, setModel,
+  getSystemPrompt, setSystemPrompt, resetSystemPrompt,
+  callChatCompletion, DEFAULT_MODEL, AVAILABLE_MODELS, sanitizeKey
+} from "../lib/deepseek";
 
 const REFRESH_OPTIONS = [3000, 5000, 10000, 30000];
 
@@ -28,6 +32,8 @@ export default function Settings() {
   const [testResult, setTestResult] = useState("");
   const t = latest?.telemetry || {};
 
+  const [showKey, setShowKey] = useState(false);
+
   const saveDevice = () => {
     setDeviceId(draft);
     setSaved(true);
@@ -35,32 +41,58 @@ export default function Settings() {
   };
 
   const saveAI = () => {
-    setApiKey(apiKey);
+    const cleanKey = sanitizeKey(apiKey);
+    setApiKey(cleanKey);
+    setApiKeyDraft(cleanKey);
     setModel(model);
     setSystemPrompt(prompt);
     setAiSaved(true);
-    setTestResult("");
+    setTestResult(cleanKey ? "Configuration saved." : "Saved (No API key set).");
     setTimeout(() => setAiSaved(false), 1500);
   };
 
   const resetAI = () => {
-    setApiKey("");
+    clearApiKey();
     setModel(DEFAULT_MODEL);
     resetSystemPrompt();
     setPromptDraft(getSystemPrompt());
     setApiKeyDraft("");
     setModelDraft(DEFAULT_MODEL);
-    setTestResult("API key cleared (current tab only).");
+    setTestResult("API key cleared.");
   };
 
   const testAI = async () => {
     setTesting(true);
     setTestResult("");
+    const cleanKey = sanitizeKey(apiKey);
+    if (!cleanKey) {
+      setTestResult("Error: Please enter a DeepSeek API key (sk-...) before testing.");
+      setTesting(false);
+      return;
+    }
+    // Save to storage immediately
+    setApiKey(cleanKey);
+    setApiKeyDraft(cleanKey);
+    setModel(model);
+    setSystemPrompt(prompt);
+
     try {
-      await callChatCompletion({ messages: [{ role: "system", content: prompt }, { role: "user", content: "Reply with exactly: OK" }] });
-      setTestResult("Connection OK — DeepSeek responded.");
+      await callChatCompletion({
+        messages: [
+          { role: "user", content: "Reply with the single word: OK" },
+        ],
+        model,
+        apiKey: cleanKey,
+      });
+      setTestResult(`Connection OK — Successfully connected to DeepSeek using model "${model}".`);
     } catch (e) {
-      setTestResult(`Failed: ${e.message}`);
+      let msg = e.message;
+      if (msg.includes("401")) {
+        msg += "\n\nTip: 401 Authentication Fails indicates an invalid API key. Please check:\n1. Copy the full sk-... string from platform.deepseek.com/api_keys\n2. Ensure your account is active and has credits\n3. Do not include extra quotes or 'Bearer' prefix.";
+      } else if (msg.includes("402")) {
+        msg += "\n\nTip: 402 Insufficient Balance indicates your DeepSeek account has zero remaining credit. Top up at platform.deepseek.com/top_up.";
+      }
+      setTestResult(`Failed: ${msg}`);
     } finally {
       setTesting(false);
     }
@@ -143,22 +175,34 @@ export default function Settings() {
 
       <Card
         title="AI Assistant — DeepSeek"
-        subtitle="API key is stored only in this browser tab (sessionStorage) and cleared when it closes"
+        subtitle="Connected to DeepSeek API with function-calling support"
         icon={<Sparkles className="h-4 w-4 text-purple-300" />}
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-4">
             <div>
               <label className="text-xs text-slate-400 block mb-1.5">DeepSeek API Key</label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKeyDraft(e.target.value)}
-                placeholder="sk-..."
-                autoComplete="off"
-                className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-purple-500"
-              />
-              <p className="text-[11px] text-slate-500 mt-1">Kept in sessionStorage. Never written to disk / persisted.</p>
+              <div className="relative">
+                <input
+                  type={showKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => setApiKeyDraft(e.target.value)}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 pr-10 text-sm font-mono text-slate-100 outline-none focus:border-purple-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey((s) => !s)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  title={showKey ? "Hide API key" : "Show API key"}
+                >
+                  {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Keys start with <code className="text-purple-300">sk-</code>. Stored securely in your browser.
+              </p>
             </div>
             <div>
               <label className="text-xs text-slate-400 block mb-1.5">Model</label>
@@ -167,17 +211,52 @@ export default function Settings() {
                 onChange={(e) => setModelDraft(e.target.value)}
                 className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-purple-500"
               >
-                <option value="deepseek-chat">deepseek-chat (V3)</option>
-                <option value="deepseek-reasoner">deepseek-reasoner (R1)</option>
+                {AVAILABLE_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
               </select>
+              <p className="text-[11px] text-slate-500 mt-1">
+                {AVAILABLE_MODELS.find((m) => m.id === model)?.desc || "OpenAI-compatible DeepSeek model"}
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button onClick={saveAI} className="inline-flex items-center gap-2 rounded-lg border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-xs font-medium text-purple-200 hover:bg-purple-500/20"><Save className="h-3.5 w-3.5" />{aiSaved ? "Saved" : "Save configuration"}</button>
-              <button onClick={testAI} disabled={testing || !apiKey} className="inline-flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-800/60 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-slate-700 disabled:opacity-50">{testing ? <RefreshCcw className="h-3.5 w-3.5 animate-spin" /> : <Plug className="h-3.5 w-3.5" />} Test connection</button>
-              <button onClick={resetAI} className="inline-flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs font-medium text-rose-300 hover:bg-rose-500/15"><Trash2 className="h-3.5 w-3.5" /> Clear
+              <button
+                onClick={saveAI}
+                className="inline-flex items-center gap-2 rounded-lg border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-xs font-medium text-purple-200 hover:bg-purple-500/20"
+              >
+                <Save className="h-3.5 w-3.5" />
+                {aiSaved ? "Saved" : "Save configuration"}
+              </button>
+              <button
+                onClick={testAI}
+                disabled={testing || !apiKey}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-800/60 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-slate-700 disabled:opacity-50"
+              >
+                {testing ? <RefreshCcw className="h-3.5 w-3.5 animate-spin" /> : <Plug className="h-3.5 w-3.5" />}
+                Test connection
+              </button>
+              <button
+                onClick={resetAI}
+                className="inline-flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs font-medium text-rose-300 hover:bg-rose-500/15"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Clear
               </button>
             </div>
-            {testResult && <div className="text-xs text-slate-300 rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2 whitespace-pre-wrap">{testResult}</div>}
+            {testResult && (
+              <div
+                className={`text-xs rounded-lg border p-3 whitespace-pre-wrap leading-relaxed ${
+                  testResult.startsWith("Connection OK")
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                    : testResult.startsWith("Failed:")
+                    ? "border-rose-500/40 bg-rose-500/10 text-rose-200"
+                    : "border-slate-700 bg-slate-900/40 text-slate-300"
+                }`}
+              >
+                {testResult}
+              </div>
+            )}
           </div>
 
           <div>
