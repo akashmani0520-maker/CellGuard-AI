@@ -78,7 +78,7 @@ export const LOAD_PRESETS = {
   },
 };
 
-// 12 College Viva Scenarios
+// 18 College Viva & Defense Scenarios
 export const SCENARIOS = {
   nominal: {
     id: "nominal",
@@ -86,13 +86,43 @@ export const SCENARIOS = {
     desc: "Balanced 3S pack at 75% SoC (~11.3V), 2.2A motor load, cell delta < 15mV, temperatures stable at 28°C.",
     color: "#10b981",
     category: "Normal",
+    vivaQuestion: "Why does the 3S Li-ion pack specify 11.1V nominal when maximum charging voltage is 12.6V?",
+    vivaAnswer: "Each NMC cell has a 3.70V nominal potential derived from the flat plateau of the open-circuit voltage discharge curve. At full 4.20V charge, 3 cells in series reach 12.6V (4.2V × 3), but the pack delivers the majority (~60%) of its rated energy at 11.1V (3.7V × 3).",
+    expectedRelays: { load: true, charger: false },
+    faultFlags: 0x0000,
   },
   load_step: {
     id: "load_step",
     label: "Dynamic Load Step (Motor Start)",
-    desc: "Sudden transition from 0.5A idle to 7.5A heavy load, demonstrating real-time IR voltage sag and recovery.",
+    desc: "Sudden transition from 0.6A idle to 7.5A heavy load, demonstrating real-time IR voltage sag and recovery.",
     color: "#06b6d4",
     category: "Dynamics",
+    vivaQuestion: "Why does pack terminal voltage drop instantaneously when the motor switches on, before any significant SoC discharge?",
+    vivaAnswer: "This is instantaneous Ohmic drop V_terminal = V_OCV - I_load * R_int. The 3S pack has an equivalent series resistance (ESR) of ~90 mΩ. At 7.5A surge, V_drop = 7.5A * 0.09Ω ≈ 0.675V, which rebounds immediately as soon as current load ceases.",
+    expectedRelays: { load: true, charger: false },
+    faultFlags: 0x0000,
+  },
+  pulse_burst: {
+    id: "pulse_burst",
+    label: "High-Rate Pulse Burst (Drone / EV Launch)",
+    desc: "Cyclic 12.5A pulse bursts alternating with 1.0A rest, demonstrating transient impedance and rapid MOSFET heating.",
+    color: "#f59e0b",
+    category: "Dynamics",
+    vivaQuestion: "How does the BMS distinguish between a legitimate high-current motor acceleration burst and a dangerous short circuit?",
+    vivaAnswer: "Through dual-tier current protection: Tier 1 utilizes an I²t thermal curve permitting transient 12-14A bursts for up to 3 seconds, whereas Tier 2 utilizes an autonomous analog comparator tripping in < 25 microseconds if current breaches the hard short-circuit threshold (>15A).",
+    expectedRelays: { load: true, charger: false },
+    faultFlags: 0x0000,
+  },
+  regen_braking: {
+    id: "regen_braking",
+    label: "Regenerative Braking Kinetic Surge",
+    desc: "Negative 7.2A reverse charge pulse during deceleration, capturing kinetic energy with transient voltage bounce.",
+    color: "#14b8a6",
+    category: "Dynamics",
+    vivaQuestion: "What safety hazard occurs if regenerative braking injects heavy current into an already fully-charged battery pack?",
+    vivaAnswer: "If the pack is near 100% SoC (12.6V), regenerative current can force cell terminal voltages above 4.25V, causing cathode structural degradation and electrolyte breakdown. The BMS monitors cell headroom and commands the motor controller to divert excess kinetic energy into dynamic brake shunts.",
+    expectedRelays: { load: true, charger: true },
+    faultFlags: 0x0000,
   },
   charging_cc: {
     id: "charging_cc",
@@ -100,6 +130,10 @@ export const SCENARIOS = {
     desc: "3.5A bulk charging into pack, SoC climbing, cell voltages rising from 3.75V towards 4.10V.",
     color: "#3b82f6",
     category: "Charging",
+    vivaQuestion: "Why is lithium-ion charging divided into CC and CV phases instead of charging at constant voltage from the start?",
+    vivaAnswer: "Applying a constant 12.6V to a discharged pack (e.g. at 9.6V) would produce an uncontrolled, destructive inrush current (I = ΔV / R_int = 3V / 0.09Ω ≈ 33A), triggering thermal runaway. The CC phase regulates safe current (0.7C / 3.5A) until cells reach 4.15-4.20V, after which the CV phase safely tapers current.",
+    expectedRelays: { load: false, charger: true },
+    faultFlags: 0x0000,
   },
   charging_cv: {
     id: "charging_cv",
@@ -107,62 +141,142 @@ export const SCENARIOS = {
     desc: "Pack at 12.45V (4.15V/cell), current tapering down to 0.35A, passive balancing shunts active.",
     color: "#6366f1",
     category: "Charging",
+    vivaQuestion: "When does the BMS consider constant-voltage charging complete?",
+    vivaAnswer: "Charging terminates when current decays below the C/20 cutoff threshold (~150-250 mA) while holding cell voltages strictly at 4.20V. Simultaneously, top-balancing bleed shunts engage on any cell exceeding its peers by > 15 mV.",
+    expectedRelays: { load: false, charger: true },
+    faultFlags: 0x0000,
+  },
+  active_balancing: {
+    id: "active_balancing",
+    label: "Active Top-End Balancing Shunt",
+    desc: "Cell 2 at 4.09V while Cells 1 & 3 are at 3.98V (110mV delta); bypass bleed resistors actively equalize voltages.",
+    color: "#8b5cf6",
+    category: "Charging",
+    vivaQuestion: "Why does an unbalance of even 100 mV severely reduce total usable pack capacity?",
+    vivaAnswer: "Pack capacity is constrained by the weakest cell: during charge, the highest cell triggers Overvoltage Cutoff (4.25V) prematurely before others are full; during discharge, the lowest cell triggers Undervoltage Cutoff (2.85V) prematurely. Balancing eliminates this bottleneck at both ends.",
+    expectedRelays: { load: false, charger: true },
+    faultFlags: 0x0000,
   },
   cell_imbalance: {
     id: "cell_imbalance",
     label: "Severe Cell Imbalance (Degraded Cell 2)",
-    desc: "Cell 2 has higher internal resistance; under load it sags to 3.25V while Cells 1 & 3 stay at 3.65V (Delta > 350 mV).",
-    color: "#f59e0b",
-    category: "Faults",
+    desc: "Cell 2 has degraded internal resistance (88 mΩ); under load it sags to 3.25V while Cells 1 & 3 stay at 3.65V (Delta > 350 mV).",
+    color: "#d97706",
+    category: "Degradation",
+    vivaQuestion: "What chemical degradation causes Cell 2's internal resistance to spike to 88 mΩ compared to 30 mΩ for healthy cells?",
+    vivaAnswer: "Repeated thermal stress and solid-electrolyte interphase (SEI) growth consume active lithium ions and thicken the resistive passivation layer on the graphite anode. This spikes internal ESR and creates localized hot spots during high-current discharge.",
+    expectedRelays: { load: true, charger: false },
+    faultFlags: 0x0000,
   },
-  thermal_warning: {
-    id: "thermal_warning",
-    label: "MOSFET High-Temperature Alert",
-    desc: "Sustained high load heats Sensor 2 (FETs/Shunt) to 48.5°C (> 45°C threshold), triggering cooling/throttle warning.",
-    color: "#f97316",
-    category: "Thermal",
-  },
-  thermal_cutoff: {
-    id: "thermal_cutoff",
-    label: "Thermal Runaway Protection Trip (58°C)",
-    desc: "Sensor 2 reaches 58°C (> 55°C critical). BMS trips FAULT_DISCHARGE_OT, opens load relay, halts current to prevent fire.",
-    color: "#ef4444",
-    category: "Protection",
+  aged_capacity_fade: {
+    id: "aged_capacity_fade",
+    label: "End-of-Life Capacity Fade (840 Cycles / 76% SOH)",
+    desc: "Pack after 840 cycles: State of Health down to 76.5%, capacity reduced to 3.98 Ah, ESR doubled, severe voltage sag.",
+    color: "#a855f7",
+    category: "Degradation",
+    vivaQuestion: "What is the standard automotive/industrial definition of battery End-of-Life (EOL)?",
+    vivaAnswer: "A battery pack reaches EOL when its usable capacity degrades to 80% of its initial nominal rating (SOH < 80%) or its internal ESR doubles. At 76.5% SOH, CellGuard AI flags the pack for secondary stationary energy storage rather than high-drain mobile applications.",
+    expectedRelays: { load: true, charger: false },
+    faultFlags: 0x0000,
   },
   low_soc_warning: {
     id: "low_soc_warning",
     label: "Low Battery Reserve (<15% SoC)",
-    desc: "Pack SoC at 12%, pack voltage 9.8V (3.27V/cell), low SoC alert active, prompts operator to connect charger.",
+    desc: "Pack SoC at 11.5%, pack voltage 9.8V (3.27V/cell), low SoC alert active, prompts operator to connect charger.",
     color: "#eab308",
     category: "Normal",
+    vivaQuestion: "Why does the discharge curve steepen dramatically below 15% SoC?",
+    vivaAnswer: "At low SoC, lithium de-intercalation from the graphite anode approaches depletion. The chemical diffusion potential drops sharply, causing terminal voltage to plunge rapidly from 3.5V to 3.0V within just a few minutes of standard load.",
+    expectedRelays: { load: true, charger: false },
+    faultFlags: 0x0000,
   },
   undervoltage_trip: {
     id: "undervoltage_trip",
     label: "Over-Discharge Cutoff Trip (2.85V)",
     desc: "Cell 3 dips to 2.85V cutoff threshold during high load, BMS trips FAULT_CELL_UV & FAULT_PACK_UV, opens load relay.",
     color: "#dc2626",
-    category: "Protection",
+    category: "Safety",
+    vivaQuestion: "Why is discharging below 2.5V permanently destructive to lithium cells?",
+    vivaAnswer: "Below 1.5V-2.0V, the copper anode current collector oxidizes and dissolves into the electrolyte as Cu²⁺ ions. When subsequently recharged, the copper plates onto the anode as metallic dendrites, causing micro-shorts, high self-discharge, and eventual thermal runaway.",
+    expectedRelays: { load: false, charger: false },
+    faultFlags: 0x000A,
   },
   overvoltage_trip: {
     id: "overvoltage_trip",
     label: "Over-Charge Cutoff Trip (4.28V)",
     desc: "Faulty charger pushes Cell 1 to 4.28V (> 4.25V safety limit). BMS instantly trips FAULT_CELL_OV, opening charger relay.",
     color: "#b91c1c",
-    category: "Protection",
+    category: "Safety",
+    vivaQuestion: "What occurs inside the cathode if a cell is forced beyond 4.25V?",
+    vivaAnswer: "Excessive lithium extraction causes lattice destabilization in the NMC cathode structure, releasing gaseous oxygen into the organic electrolyte. The exothermic reaction generates heat and internal gas pressure, which can rupture safety vents and initiate thermal runaway.",
+    expectedRelays: { load: false, charger: false },
+    faultFlags: 0x0005,
+  },
+  thermal_warning: {
+    id: "thermal_warning",
+    label: "MOSFET High-Temperature Alert (48°C)",
+    desc: "Sustained high load heats Sensor 2 (FETs/Shunt) to 48.5°C (> 45°C threshold), triggering cooling fan and throttle alert.",
+    color: "#ea580c",
+    category: "Thermal",
+    vivaQuestion: "Why are temperature sensors placed on both the pack core and the BMS power MOSFETs?",
+    vivaAnswer: "MOSFETs have small thermal mass and dissipate P = I² * R_DS(on). During 10A discharge, FET temperatures can rise by 25°C in seconds while heavy battery cells barely warm up. Monitoring both points allows proactive fan engagement before cell temperature thresholds are violated.",
+    expectedRelays: { load: true, charger: false },
+    faultFlags: 0x0000,
+  },
+  thermal_cutoff: {
+    id: "thermal_cutoff",
+    label: "Thermal Runaway Protection Trip (58°C)",
+    desc: "Sensor 2 reaches 58°C (> 55°C critical). BMS trips FAULT_DISCHARGE_OT, opens load relay, halts current to prevent fire.",
+    color: "#ef4444",
+    category: "Safety",
+    vivaQuestion: "At what temperature does self-sustaining thermal runaway begin in NMC chemistry?",
+    vivaAnswer: "The solid electrolyte interphase (SEI) decomposes exothermically between 80°C and 120°C. CellGuard AI's 55°C trip threshold provides a critical 25°C safety margin, isolating relays to stop Joule heating (I²R) long before irreversible chemical runaway occurs.",
+    expectedRelays: { load: false, charger: false },
+    faultFlags: 0x0100,
+  },
+  cold_charge_inhibit: {
+    id: "cold_charge_inhibit",
+    label: "Sub-Zero Cold Weather Inhibit (<0°C)",
+    desc: "Freezing conditions (-4.5°C); BMS trips FAULT_CHARGE_UT and locks charger relay open to prevent lithium plating.",
+    color: "#0284c7",
+    category: "Thermal",
+    vivaQuestion: "Why does the BMS permit discharging in cold weather (-5°C) but strictly forbids charging?",
+    vivaAnswer: "At sub-zero temperatures, lithium-ion diffusion within the graphite anode slows by over 90%. Injected charge current cannot intercalate into the carbon matrix; instead, metallic lithium deposits directly onto the anode surface (lithium plating), forming sharp dendrites that puncture the separator.",
+    expectedRelays: { load: true, charger: false },
+    faultFlags: 0x0200,
   },
   overcurrent_short: {
     id: "overcurrent_short",
     label: "Short-Circuit / Heavy Over-Current",
     desc: "16A short-circuit current spike, BMS trips FAULT_DISCHARGE_OC and FAULT_SHORT within microseconds, locks out relays.",
     color: "#991b1b",
-    category: "Protection",
+    category: "Safety",
+    vivaQuestion: "Why can software-only ADC polling never protect against short circuits?",
+    vivaAnswer: "A direct short circuit can dump > 100A in under 50 microseconds, vaporizing PCB traces and welding contactors before an MCU software loop (polling every 10-100 ms) can execute. Protection requires an autonomous analog comparator circuit directly driving the MOSFET gate low in < 25 µs.",
+    expectedRelays: { load: false, charger: false },
+    faultFlags: 0x0060,
   },
   ground_mux_fix: {
     id: "ground_mux_fix",
     label: "Dual-MUX Ground-Reference Demo",
     desc: "Demonstrates hardware innovation: Ground MUX cycling references (GND, -V1, -(V1+V2)) for true differential 3S ADC reads.",
-    color: "#8b5cf6",
+    color: "#7c3aed",
     category: "Hardware",
+    vivaQuestion: "How does the dual-multiplexer architecture solve the classic ground reference challenge of measuring series cells?",
+    vivaAnswer: "Conventional single-ended ADCs cannot read Cell 2 or Cell 3 without complex, costly isolated amplifiers or high-voltage resistor dividers that introduce common-mode gain errors. CellGuard AI pairs a primary multiplexer with a ground-referencing multiplexer that dynamically shifts the ADC reference ground to the bottom of the active cell, ensuring 100% positive, rail-to-rail differential ADC conversion.",
+    expectedRelays: { load: true, charger: false },
+    faultFlags: 0x0000,
+  },
+  sensor_wire_break: {
+    id: "sensor_wire_break",
+    label: "Sense Lead Disconnect / Sensor Open-Circuit",
+    desc: "Cell 3 sense lead broken (floating 0.00V) and thermistor open (99.9°C); BMS trips sensor faults and opens all relays.",
+    color: "#64748b",
+    category: "Hardware",
+    vivaQuestion: "How does the BMS detect an open-circuit sense wire versus a real 0.0V battery cell?",
+    vivaAnswer: "Firmware employs pull-down bias resistors on ADC sense lines and performs cross-consistency validation: if Pack Voltage = 11.2V but Cell 3 reads 0.00V, the sum (V1 + V2 ≠ V_pack) flags FAULT_CELL_SENSOR. The BMS enters fail-safe lockout to prevent over-charging undetected cells.",
+    expectedRelays: { load: false, charger: false },
+    faultFlags: 0x0C00,
   },
 };
 
@@ -398,6 +512,109 @@ export function generateSnapshot(scenarioId = "nominal", tick = 0, overrides = {
       break;
     }
 
+    case "pulse_burst": {
+      const isBurst = (tick % 6) < 3;
+      loadAmps = isBurst ? 12.80 : 1.10;
+      baseSoc = clamp(72.0 - (simSeconds * 0.08), 5, 100);
+      thermalMultiplier = isBurst ? 4.2 : 1.2;
+      extraTempFET = isBurst ? 14.5 : 6.0;
+      anomalies = isBurst
+        ? ["High-Rate Pulse Burst Active: 12.8A Surge (~140W)", "Pronounced IR Voltage Sag: ~1.15V drop"]
+        : ["Pulse Rest Period: 1.1A Nominal Cruising"];
+      break;
+    }
+
+    case "regen_braking": {
+      loadAmps = -7.20; // High reverse current from motor back-EMF
+      baseSoc = clamp(64.0 + (simSeconds * 0.04), 0, 99);
+      charging = true;
+      chargerDetected = true;
+      chargerRelay = true;
+      loadRelay = true; // Bidirectional inverter
+      thermalMultiplier = 2.2;
+      extraTempFET = 9.0;
+      anomalies = [
+        "Regenerative Braking Active: Reverse 7.2A Recovery",
+        "Dynamic Inverter Back-EMF absorbing kinetic energy",
+        "Pack voltage elevated by Ohmic charge rise (+0.65V)",
+      ];
+      break;
+    }
+
+    case "active_balancing": {
+      loadAmps = -0.65; // Low-current top balancing
+      baseSoc = clamp(92.0 + phase * 4.0, 90, 98.5);
+      charging = true;
+      chargerDetected = true;
+      chargerRelay = true;
+      loadRelay = false;
+      // Cell 2 has higher voltage, bleed shunt active on Cell 2
+      cellOffset = [-0.04, 0.07, -0.03];
+      extraTempFET = 2.5;
+      anomalies = [
+        "Top-End Passive Balancing Active: 100mA bleed on Cell 2",
+        "Equalizing Cell 2 (4.08V) with Cells 1 & 3 (~3.97V)",
+        "Balancing delta target: < 15 mV before float cutoff",
+      ];
+      break;
+    }
+
+    case "aged_capacity_fade": {
+      loadAmps = 3.60;
+      baseSoc = clamp(60.0 - (simSeconds * 0.06), 5, 100);
+      // Double ESR for all cells (aged pack at 840 cycles)
+      rCell = [0.062, 0.068, 0.065];
+      sohPercent = 76.5;
+      cycleCount = 840;
+      extraTempCell = 6.5;
+      extraTempFET = 8.0;
+      anomalies = [
+        "Battery End-of-Life (EOL) SOH: 76.5% (< 80% Threshold)",
+        "High Internal ESR (~195 mΩ Total): 2.2x healthy baseline",
+        "Noticeable voltage sag under moderate 3.6A load (~0.70V)",
+        "Recommend decommissioning from EV service to stationary storage",
+      ];
+      break;
+    }
+
+    case "cold_charge_inhibit": {
+      loadAmps = 0.0; // Charge inhibited!
+      baseSoc = 35.0;
+      chargerDetected = true;
+      chargerRelay = false; // LOCKED OPEN
+      loadRelay = true;
+      faultFlags = 0x0200; // FAULT_CHARGE_UT (bit 9)
+      faultCount = 1;
+      isSafe = false;
+      // Ambient is freezing sub-zero
+      extraTempCell = -31.0; // Pushes temp to ~ -4.5°C
+      extraTempFET = -31.0;
+      anomalies = [
+        "CRITICAL: Sub-Zero Cold Temperature Inhibit Active (-4.5°C)",
+        "FAULT_CHARGE_UT: Charge current blocked to prevent lithium plating",
+        "Internal graphite anode diffusion restricted; warming required before charging",
+      ];
+      break;
+    }
+
+    case "sensor_wire_break": {
+      loadAmps = 0.0;
+      baseSoc = 65.0;
+      loadRelay = false;   // Failsafe OPEN
+      chargerRelay = false; // Failsafe OPEN
+      faultFlags = 0x0C00; // FAULT_CELL_SENSOR (0x0800) | FAULT_TEMP_SENSOR (0x0400)
+      faultCount = 2;
+      isSafe = false;
+      cellOffset = [0.0, 0.0, -999.0]; // Disconnected sense lead
+      anomalies = [
+        "HARDWARE FAULT: Cell 3 Sense Lead Open-Circuit (0.00V)",
+        "HARDWARE FAULT: NTC Thermistor 3 Open-Circuit (99.9°C)",
+        "FAULT_CELL_SENSOR & FAULT_TEMP_SENSOR active",
+        "Failsafe Protection: Relays isolated to prevent unmonitored operation",
+      ];
+      break;
+    }
+
     case "nominal":
     default: {
       loadAmps = 2.20;
@@ -442,6 +659,7 @@ export function generateSnapshot(scenarioId = "nominal", tick = 0, overrides = {
   const ocvBase = getCellOCV(soc);
 
   const cellVoltages = [0, 1, 2].map((i) => {
+    if (cellOffset[i] < -500) return 0.000; // Broken/disconnected sense line
     const ocv = ocvBase + cellOffset[i];
     const irDrop = loadAmps * rCell[i]; // IR sag in Volts
     const v = ocv - irDrop;
@@ -449,8 +667,11 @@ export function generateSnapshot(scenarioId = "nominal", tick = 0, overrides = {
     return clamp(jitter(v, 0.0015), 2.50, 4.35);
   });
 
-  // Pack voltage is the sum of the 3 series cells
+  // Pack voltage is the sum of the 3 series cells (or full pack if sensor line broken)
   let packVoltage = cellVoltages.reduce((sum, v) => sum + v, 0);
+  if (scenarioId === "sensor_wire_break") {
+    packVoltage = clamp(ocvBase * 3 - loadAmps * 0.09, 9.0, 12.6); // Real pack voltage intact
+  }
   if (overrides.pack_voltage !== undefined && overrides.pack_voltage !== null) {
     packVoltage = Number(overrides.pack_voltage);
   }
@@ -464,19 +685,28 @@ export function generateSnapshot(scenarioId = "nominal", tick = 0, overrides = {
   const rTotalPack = rCell.reduce((a, b) => a + b, 0);
   const jouleHeatWatts = Math.pow(currentMagnitude, 2) * rTotalPack;
 
+  // Ambient temperature can be sub-zero in cold weather
+  const effectiveAmbient = scenarioId === "cold_charge_inhibit" ? -4.5 : AMBIENT_TEMP;
+
   // Sensor 1: Core pack temperature (slow thermal inertia)
-  const tCore = AMBIENT_TEMP + (jouleHeatWatts * 0.45 * thermalMultiplier) + extraTempCell;
+  const tCore = effectiveAmbient + (jouleHeatWatts * 0.45 * thermalMultiplier) + extraTempCell;
   // Sensor 2: Power MOSFETs & Shunt resistor (heats up quickest under load)
-  const tMosfet = AMBIENT_TEMP + (jouleHeatWatts * 1.10 * thermalMultiplier) + extraTempFET;
+  const tMosfet = effectiveAmbient + (jouleHeatWatts * 1.10 * thermalMultiplier) + extraTempFET;
   // Sensor 3: Pack casing / ambient reference
-  const tAmbient = AMBIENT_TEMP + (jouleHeatWatts * 0.20 * thermalMultiplier) + 0.5;
+  const tAmbient = effectiveAmbient + (jouleHeatWatts * 0.20 * thermalMultiplier) + (scenarioId === "cold_charge_inhibit" ? 0.0 : 0.5);
 
   // Realistic micro-fluctuations on temperature (+/- 0.12°C)
   let temps = [
     jitter(tCore, 0.10),
     jitter(tMosfet, 0.15),
     jitter(tAmbient, 0.08),
-  ].map((t) => clamp(t, -10, 85));
+  ].map((t) => clamp(t, -20, 110));
+
+  if (scenarioId === "cold_charge_inhibit") {
+    temps = [-4.5, -3.8, -4.2];
+  } else if (scenarioId === "sensor_wire_break") {
+    temps[2] = 99.9; // Open-circuit thermistor reading pull-up rail
+  }
 
   if (overrides.temperature !== undefined && Array.isArray(overrides.temperature)) {
     temps = overrides.temperature;
@@ -527,6 +757,13 @@ export function generateSnapshot(scenarioId = "nominal", tick = 0, overrides = {
     pack_config: "3S1P",
     cell_count: 3,
     nominal_voltage: PACK_NOMINAL,
+    dual_mux: {
+      active_channel: (tick % 3) + 1,
+      ref_voltage: [0.0, -3.70, -7.40][tick % 3],
+      mode: "Differential Ground Synchronized",
+    },
+    active_balancing_cell: scenarioId === "active_balancing" || scenarioId === "charging_cv" ? 2 : null,
+    scenario_id: scenarioId,
   };
 
   return {
