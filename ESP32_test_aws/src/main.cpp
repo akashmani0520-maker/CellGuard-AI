@@ -854,9 +854,20 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
  * ============================================================
  */
 void publishTelemetryToAWS() {
-    if (!mqttClient.connected()) return;
+    if (!mqttClient.connected()) {
+        Serial.println("[MQTT] Publish skipped — not connected to AWS IoT.");
+        return;
+    }
 
-    StaticJsonDocument<1024> doc;
+    // 2048-byte document: the full payload is ~700–900 bytes serialized.
+    // A 1024-byte doc was silently truncating fields, causing publish failures.
+    StaticJsonDocument<2048> doc;
+
+    // Unix epoch timestamp in milliseconds (NTP-synced wall-clock).
+    // Stored as a string to match DynamoDB sort-key format used by Lambda.
+    uint64_t epochMs = (uint64_t)time(nullptr) * 1000ULL;
+    doc["timestamp"]          = String((unsigned long long)epochMs);
+
     doc["device_id"]          = DEVICE_ID;
     doc["pack_voltage"]       = serialized(String(bms.packVoltage, 2));
     doc["pack_current"]       = serialized(String(bms.packCurrent, 2));
@@ -865,7 +876,7 @@ void publishTelemetryToAWS() {
     doc["remaining_capacity"] = serialized(String(bms.remainingCapacity, 2));
     doc["cycle_count"]        = bms.cycleCount;
 
-    // --- Battery / energy analytics (item 3) ---------------------------
+    // Battery / energy analytics
     doc["amp_hours_in"]     = serialized(String(bms.ampHoursIn, 2));
     doc["amp_hours_out"]    = serialized(String(bms.ampHoursOut, 2));
     doc["energy_in_wh"]     = serialized(String(bms.energyInWh, 2));
@@ -873,7 +884,7 @@ void publishTelemetryToAWS() {
     doc["full_capacity_ah"] = serialized(String(bms.fullCapacityAh, 2));
     doc["soh_percent"]      = serialized(String(bms.soh, 1));
 
-    // --- Fault history ---------------------------------------------------
+    // Fault history
     doc["fault_count"]       = bms.faultCount;
     doc["last_fault_flags"]  = bms.lastFaultFlags;
     doc["last_fault_epoch"]  = bms.lastFaultTime;
@@ -883,7 +894,6 @@ void publishTelemetryToAWS() {
         cellArr.add(serialized(String(bms.cellVoltage[i], 3)));
     }
 
-    // Cell drift is represented by the max-min delta across the pack.
     doc["max_cell_voltage"] = serialized(String(bms.maxCellVoltage, 3));
     doc["min_cell_voltage"] = serialized(String(bms.minCellVoltage, 3));
     doc["cell_delta"]       = serialized(String(bms.cellDelta, 3));
@@ -903,16 +913,28 @@ void publishTelemetryToAWS() {
     doc["bms_online"]       = bms.bmsOnline;
     doc["wifi_online"]      = bms.wifiOnline;
     doc["aws_online"]       = bms.awsOnline;
-
-    // --- Cheap system/network health (non-blocking reads) --------------
     doc["rssi"]             = WiFi.RSSI();
     doc["uptime_ms"]        = millis();
 
-    char jsonBuffer[1024];
+    // Serialise into a 2048-byte stack buffer.
+    char jsonBuffer[2048];
     size_t len = serializeJson(doc, jsonBuffer, sizeof(jsonBuffer));
 
-    if (!mqttClient.publish(AWS_IOT_TOPIC_TELEMETRY, jsonBuffer, len)) {
-        Serial.println("[MQTT] Telemetry publish failed. (len=" + String(len) + ")");
+    // Warn if the JSON was silently truncated (ArduinoJson fills buffer exactly).
+    if (doc.overflowed()) {
+        Serial.println("[MQTT] WARNING: JSON document overflowed — increase StaticJsonDocument size!");
+    }
+
+    Serial.printf("[MQTT] Publishing %u bytes to %s ...\n", (unsigned)len, AWS_IOT_TOPIC_TELEMETRY);
+
+    if (mqttClient.publish(AWS_IOT_TOPIC_TELEMETRY, jsonBuffer, len)) {
+        Serial.printf("[MQTT] Published OK. V=%.2fV I=%.2fA SoC=%u%% ts=%llu\n",
+                      bms.packVoltage, bms.packCurrent, bms.soc, (unsigned long long)epochMs);
+    } else {
+        Serial.printf("[MQTT] Publish FAILED (len=%u). PubSubClient state=%d\n",
+                      (unsigned)len, mqttClient.state());
+        // If len > MQTT buffer the broker never received the packet.
+        // Increase setBufferSize() below or reduce payload size.
     }
 }
 
@@ -963,7 +985,9 @@ void connectAWS() {
 
     mqttClient.setServer(AWS_IOT_ENDPOINT, AWS_IOT_PORT);
     mqttClient.setCallback(onMqttMessage);
-    mqttClient.setBufferSize(1024);
+    // Buffer must exceed the largest JSON payload (currently ~900 bytes serialized).
+    // 1024 was silently dropping packets — 2048 gives comfortable headroom.
+    mqttClient.setBufferSize(2048);
 
     if (mqttClient.connect(DEVICE_ID)) {
         bms.awsOnline = true;

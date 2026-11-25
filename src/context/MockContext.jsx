@@ -26,6 +26,7 @@ function writeStored(state) {
 export const DEFAULT_MOCK_STATE = {
   enabled: false,
   scenario: "nominal",
+  loadPreset: null,
   overrides: {},
   animating: true,
 };
@@ -44,8 +45,8 @@ export function MockProvider({ children }) {
     });
   }, []);
 
-  const enableMock = useCallback((scenario = "nominal") => {
-    setMockState({ enabled: true, scenario, overrides: {}, animating: true });
+  const enableMock = useCallback((scenario = "nominal", loadPreset = null) => {
+    setMockState({ enabled: true, scenario, loadPreset, overrides: {}, animating: true });
   }, [setMockState]);
 
   const disableMock = useCallback(() => {
@@ -55,6 +56,14 @@ export function MockProvider({ children }) {
 
   const setScenario = useCallback((scenario) => {
     setMockState((s) => ({ ...s, scenario, overrides: {} }));
+  }, [setMockState]);
+
+  const setLoadPreset = useCallback((loadPreset) => {
+    setMockState((s) => ({
+      ...s,
+      loadPreset,
+      overrides: { ...s.overrides, loadPreset },
+    }));
   }, [setMockState]);
 
   const setOverrides = useCallback((overrides) => {
@@ -71,6 +80,7 @@ export function MockProvider({ children }) {
     enableMock,
     disableMock,
     setScenario,
+    setLoadPreset,
     setOverrides,
     toggleAnimating,
   };

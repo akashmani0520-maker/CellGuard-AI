@@ -23,7 +23,19 @@ export default function Dashboard() {
     return <Offline status={status} />;
   }
 
-  const currentTone = t.pack_current > 0 ? "ok" : t.pack_current < 0 ? "warning" : "safe";
+  const isDischarging = t.load_detected || (!t.charging && Math.abs(t.pack_current) > 0.05);
+  const currentTone = t.charging ? "ok" : isDischarging ? "warning" : "safe";
+  const currentSub = t.charging
+    ? "Charging (CC/CV Source)"
+    : isDischarging
+    ? "Discharging (to Load)"
+    : "Standby / Idle";
+
+  const powerSub = t.charging
+    ? "Charger absorption"
+    : isDischarging
+    ? "Delivered to load"
+    : "Standby (0 W)";
 
   return (
     <div className="space-y-6">
@@ -38,10 +50,33 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <Stat label="Pack Voltage" value={fmtVolt(t.pack_voltage)} icon={<BatteryCharging className="h-4 w-4 text-cyan-300" />} toneKey={t.pack_voltage > 4 ? "ok" : "danger"} />
-        <Stat label="Pack Current" value={fmtAmp(t.pack_current)} icon={<Activity className="h-4 w-4 text-blue-300" />} toneKey={currentTone} sub="+ charge / − discharge" />
-        <Stat label="Pack Power" value={fmtWatt(t.pack_power)} icon={<TrendingUp className="h-4 w-4 text-amber-300" />} />
-        <Stat label="State of Charge" value={`${fmt(t.soc, 1)}%`} icon={<Gauge className="h-4 w-4 text-emerald-300" />} toneKey={t.soc > 0 ? "ok" : "danger"} />
+        <Stat
+          label="Pack Voltage"
+          value={fmtVolt(t.pack_voltage)}
+          icon={<BatteryCharging className="h-4 w-4 text-cyan-300" />}
+          toneKey={t.pack_voltage >= 9.0 ? "ok" : "danger"}
+          sub={t.pack_voltage >= 12.3 ? "3S Charged" : t.pack_voltage <= 9.3 ? "Cutoff Threshold" : "3S Nominal (11.1V)"}
+        />
+        <Stat
+          label="Pack Current"
+          value={fmtAmp(t.pack_current)}
+          icon={<Activity className="h-4 w-4 text-blue-300" />}
+          toneKey={currentTone}
+          sub={currentSub}
+        />
+        <Stat
+          label="Pack Power"
+          value={fmtWatt(t.pack_power)}
+          icon={<TrendingUp className="h-4 w-4 text-amber-300" />}
+          sub={powerSub}
+        />
+        <Stat
+          label="State of Charge"
+          value={`${fmt(t.soc, 1)}%`}
+          icon={<Gauge className="h-4 w-4 text-emerald-300" />}
+          toneKey={t.soc > 15 ? "ok" : "danger"}
+          sub={t.soc > 20 ? "Safe operating band" : "Low reserve"}
+        />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

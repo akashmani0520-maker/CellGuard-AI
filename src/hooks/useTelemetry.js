@@ -115,8 +115,8 @@ export default function useTelemetry() {
           ? new Date(Number(x.timestamp)).toLocaleTimeString([], { hour12: false })
           : "",
         pack_voltage: Number(x.telemetry.pack_voltage) || 0,
-        pack_current: Number(x.telemetry.pack_current) || 0,
-        pack_power: Number(x.telemetry.pack_power) || 0,
+        pack_current: Math.abs(Number(x.telemetry.pack_current)) || 0,
+        pack_power: Math.abs(Number(x.telemetry.pack_power)) || 0,
         soc: Number(x.telemetry.soc) || 0,
         temp0: Number((x.telemetry.temperature || [])[0]) || 0,
         temp1: Number((x.telemetry.temperature || [])[1]) || 0,

@@ -4,7 +4,7 @@ import { Card, Readout, Pill } from "../components/ui";
 import PeriodSelector from "../components/PeriodSelector";
 import { VoltageChart, CurrentChart, TemperatureChart } from "../components/Charts";
 import usePeriodHistory, { nowMs } from "../hooks/usePeriodHistory";
-import { fmtTime, fmtVolt, fmtAmp, fmt, fmtPct, fmtAh, fmtWh } from "../lib/format";
+import { fmtTime, fmtVolt, fmtAmp, fmtWatt, fmt, fmtPct, fmtAh, fmtWh } from "../lib/format";
 import AISummary from "../components/AISummary";
 import { periodReportPayload } from "../lib/reportAI";
 
@@ -126,7 +126,7 @@ export default function History() {
                         <td className="py-2.5 pr-3 text-slate-300 tabular">{fmtTime(r.timestamp)}</td>
                         <td className={`py-2.5 pr-3 tabular ${t.pack_voltage <= 0 ? "text-rose-300" : "text-slate-100"}`}>{fmtVolt(t.pack_voltage)}</td>
                         <td className="py-2.5 pr-3 tabular text-slate-100">{fmtAmp(t.pack_current)}</td>
-                        <td className="py-2.5 pr-3 tabular text-slate-100">{fmt(t.pack_power, 0)} W</td>
+                        <td className="py-2.5 pr-3 tabular text-slate-100">{fmtWatt(t.pack_power)}</td>
                         <td className="py-2.5 pr-3 tabular text-cyan-200">{fmtPct(t.soc, 1)}</td>
                         <td className="py-2.5 pr-3 tabular text-slate-300">{cells}</td>
                         <td className="py-2.5 pr-3 tabular text-amber-200">{temps.length ? `${maxT.toFixed(1)}\u00b0C` : "\u2014"}</td>

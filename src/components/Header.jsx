@@ -17,16 +17,28 @@ export default function Header() {
 
   return (
     <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-      <div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">Battery Management System</h1>
-        <p className="text-sm text-slate-400 mt-1 flex items-center gap-2">
-          <Cpu className="h-4 w-4 text-slate-500" />
-          <span className="tabular">{deviceId}</span>
-          {t?.node_id && <span className="text-slate-600">· node {t.node_id}</span>}
-          {t && (
-            <span className="tabular text-slate-500">up {fmtUptime(t.uptime_ms)}</span>
-          )}
-        </p>
+      <div className="flex items-center gap-3">
+        <img
+          src="/cellguard.jpeg"
+          alt="CellGuard AI Logo"
+          className="h-10 w-10 rounded-xl object-cover border border-cyan-500/30 shadow-md shrink-0"
+        />
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-white tracking-tight">CellGuard AI</h1>
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+              3S Li-ion (11.1V)
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-2">
+            <Cpu className="h-3.5 w-3.5 text-slate-500" />
+            <span className="tabular">{deviceId}</span>
+            {t?.node_id && <span className="text-slate-600">· node {t.node_id}</span>}
+            {t && (
+              <span className="tabular text-slate-500">· up {fmtUptime(t.uptime_ms)}</span>
+            )}
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

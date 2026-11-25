@@ -51,7 +51,7 @@ export default function Reports() {
     const summary = [
       ["Pack Voltage", fmtVolt(t.pack_voltage)],
       ["Pack Current", fmtAmp(t.pack_current)],
-      ["Pack Power", `${fmt(t.pack_power, 0)} W`],
+      ["Pack Power", `${fmt(Math.abs(Number(t.pack_power) || 0), 0)} W`],
       ["State of Charge", fmtPct(t.soc, 1)],
       ["State of Health", fmtPct(t.soh_percent, 1)],
       ["Cycle Count", fmt(t.cycle_count, 0)],
@@ -77,7 +77,7 @@ export default function Reports() {
     const rows = history.slice().reverse().slice(0, 200).map((r) => {
       const x = r.telemetry || {};
       const temps = Array.isArray(x.temperature) ? x.temperature.map((v) => Number(v).toFixed(1)) : [];
-      return [fmtTime(r.timestamp), fmtVolt(x.pack_voltage), fmtAmp(x.pack_current), `${fmt(x.pack_power, 0)} W`, fmtPct(x.soc, 1)].concat(temps.length ? temps : ["", "", ""]);
+      return [fmtTime(r.timestamp), fmtVolt(x.pack_voltage), fmtAmp(x.pack_current), `${fmt(Math.abs(Number(x.pack_power) || 0), 0)} W`, fmtPct(x.soc, 1)].concat(temps.length ? temps : ["", "", ""]);
     });
     autoTable(doc, { startY: cursor, head: [cols], body: rows });
 

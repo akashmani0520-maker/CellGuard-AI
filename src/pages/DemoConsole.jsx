@@ -11,7 +11,7 @@ import {
   Sliders, ToggleLeft, ToggleRight, Radio,
 } from "lucide-react";
 import { useMock } from "../context/MockContext";
-import { SCENARIOS, generateSnapshot } from "../lib/mockData";
+import { SCENARIOS, LOAD_PRESETS, generateSnapshot } from "../lib/mockData";
 import { publishMockTelemetry, DEFAULT_DEVICE_ID } from "../lib/api";
 
 // ---- Passphrase gate --------------------------------------------------------
@@ -85,81 +85,116 @@ function PassphraseGate({ onUnlock }) {
 // ---- Scenario card ----------------------------------------------------------
 function ScenarioCard({ sc, active, onClick }) {
   const icons = {
-    nominal: <Battery className="h-5 w-5" />,
-    charging: <Zap className="h-5 w-5" />,
-    high_load: <Activity className="h-5 w-5" />,
-    cell_imbalance: <Sliders className="h-5 w-5" />,
-    thermal_warning: <Thermometer className="h-5 w-5" />,
-    low_soc: <Battery className="h-5 w-5" />,
-    fault: <AlertTriangle className="h-5 w-5" />,
+    nominal: <Battery className="h-4.5 w-4.5" />,
+    load_step: <Activity className="h-4.5 w-4.5" />,
+    charging_cc: <Zap className="h-4.5 w-4.5" />,
+    charging_cv: <Zap className="h-4.5 w-4.5" />,
+    cell_imbalance: <Sliders className="h-4.5 w-4.5" />,
+    thermal_warning: <Thermometer className="h-4.5 w-4.5" />,
+    thermal_cutoff: <AlertTriangle className="h-4.5 w-4.5" />,
+    low_soc_warning: <Battery className="h-4.5 w-4.5" />,
+    undervoltage_trip: <AlertTriangle className="h-4.5 w-4.5" />,
+    overvoltage_trip: <AlertTriangle className="h-4.5 w-4.5" />,
+    overcurrent_short: <Shield className="h-4.5 w-4.5" />,
+    ground_mux_fix: <Radio className="h-4.5 w-4.5" />,
   };
+
   return (
     <button
       onClick={onClick}
-      style={{ borderColor: active ? sc.color + "80" : undefined }}
-      className={`text-left rounded-xl border p-4 transition-all ${
+      style={{ borderColor: active ? sc.color : undefined }}
+      className={`text-left rounded-xl border p-4 transition-all relative ${
         active
-          ? "ring-1 bg-white/5"
-          : "border-slate-800 hover:border-slate-600 bg-slate-900/40"
+          ? "ring-2 bg-slate-900/90 shadow-lg"
+          : "border-slate-800 hover:border-slate-700 bg-slate-900/40 hover:bg-slate-900/60"
       }`}
     >
-      <div className="flex items-center gap-2 mb-2" style={{ color: active ? sc.color : "#94a3b8" }}>
-        {icons[sc.id] || <Activity className="h-5 w-5" />}
+      <div className="flex items-center gap-2 mb-2" style={{ color: sc.color }}>
+        {icons[sc.id] || <Activity className="h-4.5 w-4.5" />}
         <span className="text-sm font-semibold text-slate-100">{sc.label}</span>
+      </div>
+      <div className="flex items-center gap-2 mb-2">
+        <span
+          className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+          style={{ background: sc.color + "25", color: sc.color }}
+        >
+          {sc.category || "Viva"}
+        </span>
         {active && (
-          <span
-            className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full"
-            style={{ background: sc.color + "30", color: sc.color }}
-          >
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
             ACTIVE
           </span>
         )}
       </div>
-      <p className="text-xs text-slate-500 leading-relaxed">{sc.desc}</p>
+      <p className="text-xs text-slate-400 leading-relaxed">{sc.desc}</p>
     </button>
   );
 }
 
-// ---- Live telemetry preview card --------------------------------------------
-function TelemetryPreview({ snap }) {
-  if (!snap) return null;
-  const t = snap.telemetry || {};
-  const rows = [
-    ["Pack Voltage", `${t.pack_voltage?.toFixed(2)} V`],
-    ["Pack Current", `${t.pack_current?.toFixed(2)} A`],
-    ["Pack Power", `${t.pack_power?.toFixed(1)} W`],
-    ["State of Charge", `${t.soc?.toFixed(1)} %`],
-    ["Cell Delta", `${((t.cell_delta || 0) * 1000).toFixed(0)} mV`],
-    ["Max Temp", `${Math.max(...(t.temperature || [0])).toFixed(1)} °C`],
-    ["Fault Flags", `0x${(t.fault_flags || 0).toString(16).padStart(2, "0").toUpperCase()}`],
-    ["Fault Count", String(t.fault_count || 0)],
-    ["BMS Online", t.bms_online ? "Yes" : "No"],
-    ["Is Safe", snap.analysis?.is_safe ? "Yes" : "No"],
-  ];
+// ---- Dynamic Load Simulator -------------------------------------------------
+function LoadSimulator({ currentPreset, onSelectPreset, overrides, onOverrideChange }) {
+  const customAmps = overrides.pack_current !== undefined ? overrides.pack_current : null;
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-      <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-        Live Preview
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {Object.values(LOAD_PRESETS).map((p) => {
+          const isSelected = (!customAmps && currentPreset === p.id) || (customAmps === p.current);
+          return (
+            <button
+              key={p.id}
+              onClick={() => {
+                onSelectPreset(p.id);
+                onOverrideChange({ pack_current: p.current, loadPreset: p.id });
+              }}
+              style={{
+                borderColor: isSelected ? p.color : undefined,
+                backgroundColor: isSelected ? p.color + "15" : undefined,
+              }}
+              className={`p-2.5 rounded-lg border text-left transition-all ${
+                isSelected
+                  ? "ring-1"
+                  : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+              }`}
+            >
+              <div className="flex items-center justify-between text-xs font-semibold mb-1" style={{ color: p.color }}>
+                <span>{p.label}</span>
+              </div>
+              <div className="text-sm font-mono font-bold text-slate-100">
+                {p.current < 0 ? `Charge ${Math.abs(p.current)}A` : `${p.current.toFixed(2)} A`}
+              </div>
+              <div className="text-[10px] text-slate-500 truncate mt-0.5">{p.desc}</div>
+            </button>
+          );
+        })}
       </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-        {rows.map(([label, value]) => (
-          <div key={label} className="flex justify-between items-center border-b border-slate-800/60 pb-1.5">
-            <span className="text-xs text-slate-500">{label}</span>
-            <span className="text-xs font-mono font-semibold text-slate-200">{value}</span>
-          </div>
-        ))}
-      </div>
-      {snap.analysis?.anomalies?.length > 0 && (
-        <div className="mt-3 space-y-1">
-          {snap.analysis.anomalies.map((a, i) => (
-            <div key={i} className="flex items-center gap-2 text-xs text-rose-300 bg-rose-500/10 rounded-lg px-3 py-1.5">
-              <AlertTriangle className="h-3 w-3 shrink-0" />
-              {a}
-            </div>
-          ))}
+
+      {/* Manual Fine-grained Load Slider */}
+      <div className="p-4 rounded-xl border border-slate-800 bg-slate-950/40">
+        <div className="flex justify-between items-center text-xs text-slate-300 mb-2">
+          <span className="font-semibold flex items-center gap-1.5">
+            <Zap className="h-3.5 w-3.5 text-amber-400" /> Continuous Load Slider (IR Sag Dynamics)
+          </span>
+          <span className="font-mono text-amber-300 font-bold text-sm">
+            {customAmps !== null ? Number(customAmps).toFixed(2) : "Scenario Default"} A
+          </span>
         </div>
-      )}
+        <input
+          type="range"
+          min="0"
+          max="15"
+          step="0.1"
+          value={customAmps !== null ? customAmps : 2.5}
+          onChange={(e) => onOverrideChange({ pack_current: Number(e.target.value), loadPreset: null })}
+          className="w-full accent-amber-400 cursor-pointer"
+        />
+        <div className="flex justify-between text-[10px] text-slate-500 mt-1">
+          <span>0.0 A (Idle / 0W)</span>
+          <span>5.0 A (Motor / ~55W)</span>
+          <span>10.0 A (High Load / ~105W)</span>
+          <span>15.0 A (Peak Surge / ~150W)</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -167,9 +202,9 @@ function TelemetryPreview({ snap }) {
 // ---- Override sliders -------------------------------------------------------
 function OverrideSliders({ overrides, onChange }) {
   const sliders = [
-    { key: "soc", label: "State of Charge (%)", min: 0, max: 100, step: 1, default: 72 },
-    { key: "pack_voltage", label: "Pack Voltage (V)", min: 10, max: 17, step: 0.1, default: 14.4 },
-    { key: "pack_current", label: "Pack Current (A)", min: -30, max: 20, step: 0.1, default: -4.2 },
+    { key: "soc", label: "State of Charge (%)", min: 0, max: 100, step: 1, default: 75 },
+    { key: "pack_voltage", label: "Pack Voltage (3S: 9.0V - 12.6V)", min: 8.5, max: 13.0, step: 0.05, default: 11.1 },
+    { key: "pack_current", label: "Pack Current (A)", min: 0, max: 15, step: 0.1, default: 2.2 },
   ];
   return (
     <div className="space-y-4">
@@ -179,7 +214,7 @@ function OverrideSliders({ overrides, onChange }) {
           <div key={s.key}>
             <div className="flex justify-between text-xs text-slate-400 mb-1.5">
               <span>{s.label}</span>
-              <span className="font-mono text-slate-200">{Number(val).toFixed(1)}</span>
+              <span className="font-mono text-slate-200">{Number(val).toFixed(2)}</span>
             </div>
             <input
               type="range"
@@ -195,10 +230,10 @@ function OverrideSliders({ overrides, onChange }) {
         );
       })}
       <button
-        onClick={() => onChange({ soc: undefined, pack_voltage: undefined, pack_current: undefined })}
+        onClick={() => onChange({ soc: undefined, pack_voltage: undefined, pack_current: undefined, loadPreset: undefined })}
         className="text-xs text-slate-500 hover:text-slate-300 underline underline-offset-2"
       >
-        Reset overrides
+        Reset manual overrides
       </button>
     </div>
   );
@@ -208,9 +243,9 @@ function OverrideSliders({ overrides, onChange }) {
 function ConsoleUI() {
   const navigate = useNavigate();
   const {
-    enabled, scenario, animating,
+    enabled, scenario, loadPreset, animating,
     overrides, enableMock, disableMock,
-    setScenario, setOverrides, toggleAnimating,
+    setScenario, setLoadPreset, setOverrides, toggleAnimating,
   } = useMock();
 
   const [preview, setPreview] = useState(null);
@@ -376,10 +411,29 @@ function ConsoleUI() {
       <div className="max-w-7xl mx-auto px-6 py-8 grid grid-cols-1 xl:grid-cols-3 gap-8">
         {/* Left: scenarios + overrides */}
         <div className="xl:col-span-2 space-y-6">
+          {/* Dynamic Load Simulator */}
+          <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-5">
+            <h2 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
+              <Zap className="h-4 w-4 text-amber-400" /> Dynamic Load Simulator (IR Sag & Thermal Losses)
+              <span className="text-xs text-slate-500 font-normal ml-1">
+                (Observe instantaneous V=IR drop, temperature rise & dynamic SoC decline)
+              </span>
+            </h2>
+            <LoadSimulator
+              currentPreset={overrides.loadPreset || loadPreset}
+              onSelectPreset={(p) => setLoadPreset(p)}
+              overrides={overrides}
+              onOverrideChange={handleOverride}
+            />
+          </section>
+
           {/* Scenario selector */}
           <section>
             <h2 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
-              <Zap className="h-4 w-4 text-amber-400" /> Select Scenario
+              <Activity className="h-4 w-4 text-cyan-400" /> Viva & Protection Scenarios
+              <span className="text-xs text-slate-500 font-normal ml-1">
+                (12 College Viva Demonstrations for 3S Pack)
+              </span>
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {Object.values(SCENARIOS).map((sc) => (
@@ -511,26 +565,36 @@ function ConsoleUI() {
             </h2>
             <TelemetryPreview snap={preview} />
 
-            {/* Cell voltages mini-grid */}
+            {/* Cell voltages mini-grid (3S Architecture) */}
             {preview?.telemetry?.cell_voltage && (
               <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Cell Voltages</div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    3S Series Cell Voltages
+                  </div>
+                  <span className="text-[10px] text-cyan-400 font-mono font-semibold">
+                    Delta: {((preview.telemetry.cell_delta || 0) * 1000).toFixed(0)} mV
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
                   {preview.telemetry.cell_voltage.map((v, i) => {
-                    const danger = v < 3.0 || v > 4.2;
-                    const warn = v < 3.3 || v > 4.1;
+                    const danger = v < 2.95 || v > 4.25;
+                    const warn = v < 3.3 || v > 4.15;
                     return (
                       <div
                         key={i}
-                        className={`rounded-lg border px-3 py-2 text-center ${
+                        className={`rounded-lg border px-2.5 py-2 text-center transition-all ${
                           danger ? "border-rose-500/50 bg-rose-500/10" :
                           warn ? "border-amber-500/40 bg-amber-500/8" :
                           "border-slate-700 bg-slate-800/40"
                         }`}
                       >
                         <div className="text-[10px] text-slate-500 mb-0.5">Cell {i + 1}</div>
-                        <div className={`text-sm font-mono font-semibold ${danger ? "text-rose-400" : warn ? "text-amber-400" : "text-emerald-300"}`}>
+                        <div className={`text-sm font-mono font-bold ${danger ? "text-rose-400" : warn ? "text-amber-400" : "text-emerald-300"}`}>
                           {v.toFixed(3)} V
+                        </div>
+                        <div className="text-[9px] text-slate-500 mt-0.5">
+                          {((v - 3.7) * 1000 >= 0 ? "+" : "") + ((v - 3.7) * 1000).toFixed(0)} mV
                         </div>
                       </div>
                     );
@@ -542,16 +606,23 @@ function ConsoleUI() {
             {/* Temperature display */}
             {preview?.telemetry?.temperature && (
               <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Temperatures</div>
-                <div className="space-y-2">
+                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                  Thermal Profile (3 Channels)
+                </div>
+                <div className="space-y-3">
                   {preview.telemetry.temperature.map((temp, i) => {
                     const hot = temp > 45;
-                    const warm = temp > 35;
-                    const pct = Math.min(100, ((temp - 20) / 40) * 100);
+                    const warm = temp > 38;
+                    const pct = Math.min(100, Math.max(0, ((temp - 20) / 45) * 100));
+                    const sensorNames = [
+                      "Sensor 1 · Pack Core",
+                      "Sensor 2 · MOSFETs & Shunt",
+                      "Sensor 3 · Case / Ambient",
+                    ];
                     return (
                       <div key={i}>
                         <div className="flex justify-between text-xs mb-1">
-                          <span className="text-slate-500">Sensor {i + 1}</span>
+                          <span className="text-slate-400">{sensorNames[i] || `Sensor ${i + 1}`}</span>
                           <span className={`font-mono font-semibold ${hot ? "text-rose-400" : warm ? "text-amber-400" : "text-cyan-300"}`}>
                             {temp.toFixed(1)} °C
                           </span>

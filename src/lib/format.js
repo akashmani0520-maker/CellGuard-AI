@@ -24,12 +24,19 @@ export function fmtPct(v, dec = 1) {
 
 export function fmtAmp(v, dec = 2) {
   if (v === null || v === undefined || Number.isNaN(Number(v))) return "—";
-  return `${Number(v).toFixed(dec)} A`;
+  return `${Math.abs(Number(v)).toFixed(dec)} A`;
 }
 
 export function fmtWatt(v, dec = 0) {
   if (v === null || v === undefined || Number.isNaN(Number(v))) return "—";
-  return `${Number(v).toFixed(dec)} W`;
+  return `${Math.abs(Number(v)).toFixed(dec)} W`;
+}
+
+export function fmtAmpSigned(v, dec = 2) {
+  if (v === null || v === undefined || Number.isNaN(Number(v))) return "—";
+  const n = Number(v);
+  const s = n > 0 ? "+" : n < 0 ? "−" : "";
+  return `${s}${Math.abs(n).toFixed(dec)} A`;
 }
 
 export function fmtWh(v, dec = 0) {
