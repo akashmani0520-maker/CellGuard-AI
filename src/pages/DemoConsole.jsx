@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useMock } from "../context/MockContext";
 import { SCENARIOS, generateSnapshot } from "../lib/mockData";
+import { publishMockTelemetry, DEFAULT_DEVICE_ID } from "../lib/api";
 
 // ---- Passphrase gate --------------------------------------------------------
 const PASSPHRASE = "cellguard-demo";
@@ -215,6 +216,55 @@ function ConsoleUI() {
   const [preview, setPreview] = useState(null);
   const tickRef = useRef(0);
 
+  // --- AWS publish state ---
+  const [publishLog, setPublishLog] = useState([]);
+  const [publishing, setPublishing] = useState(false);
+  const [autoPublish, setAutoPublish] = useState(false);
+  const [publishDeviceId, setPublishDeviceId] = useState(DEFAULT_DEVICE_ID);
+  const logRef = useRef(null);
+
+  const addLog = (level, msg) => {
+    const ts = new Date().toLocaleTimeString([], { hour12: false });
+    setPublishLog((prev) => {
+      const next = [...prev, { ts, level, msg }];
+      return next.length > 200 ? next.slice(next.length - 200) : next;
+    });
+    // Scroll to bottom
+    requestAnimationFrame(() => {
+      if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+    });
+  };
+
+  const doPublish = async (snap) => {
+    if (publishing) return;
+    const s = snap || preview;
+    if (!s) { addLog("warn", "No snapshot ready — wait for preview to load."); return; }
+    setPublishing(true);
+    addLog("info", `POST ${publishDeviceId} | scenario=${scenario} | V=${s.telemetry?.pack_voltage?.toFixed(2)}V I=${s.telemetry?.pack_current?.toFixed(2)}A SoC=${s.telemetry?.soc?.toFixed(1)}%`);
+    try {
+      const result = await publishMockTelemetry(s, publishDeviceId);
+      addLog("ok", `Accepted by Lambda. ts=${result.timestamp} | ${result.message}`);
+    } catch (err) {
+      addLog("err", `FAILED: ${err.message}`);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  // Auto-publish interval
+  useEffect(() => {
+    if (!autoPublish) return;
+    const id = setInterval(() => {
+      const snap = generateSnapshot(scenario || "nominal", tickRef.current, overrides);
+      doPublish(snap);
+    }, 5000);
+    addLog("info", "Auto-publish enabled — sending every 5 s.");
+    return () => {
+      clearInterval(id);
+      addLog("info", "Auto-publish stopped.");
+    };
+  }, [autoPublish, scenario, overrides, publishDeviceId]);
+
   // Live preview ticking
   useEffect(() => {
     const sc = scenario || "nominal";
@@ -352,6 +402,86 @@ function ConsoleUI() {
             <OverrideSliders overrides={overrides} onChange={handleOverride} />
           </section>
 
+          {/* AWS Publish panel */}
+          <section className="rounded-xl border border-slate-700 bg-slate-900/60 p-5 space-y-4">
+            <h2 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+              <Radio className="h-4 w-4 text-emerald-400" /> Publish to AWS
+              <span className="text-xs text-slate-600 font-normal ml-1">(POST → Lambda → DynamoDB)</span>
+            </h2>
+
+            {/* Device ID input */}
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Target device_id</label>
+              <input
+                value={publishDeviceId}
+                onChange={(e) => setPublishDeviceId(e.target.value)}
+                className="w-full rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2 text-xs font-mono text-slate-100 outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            {/* Publish controls */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => doPublish(null)}
+                disabled={publishing}
+                className="flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
+              >
+                {publishing
+                  ? <><RefreshCcw className="h-3.5 w-3.5 animate-spin" /> Sending...</>
+                  : <><Play className="h-3.5 w-3.5" /> Publish once</>
+                }
+              </button>
+
+              <button
+                onClick={() => setAutoPublish((a) => !a)}
+                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                  autoPublish
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+                    : "border-slate-700 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {autoPublish
+                  ? <><Square className="h-3.5 w-3.5" /> Stop auto (5 s)</>
+                  : <><Radio className="h-3.5 w-3.5" /> Auto every 5 s</>
+                }
+              </button>
+
+              <button
+                onClick={() => setPublishLog([])}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-500 hover:text-slate-300"
+              >
+                Clear log
+              </button>
+            </div>
+
+            {/* Log console */}
+            <div
+              ref={logRef}
+              className="h-48 overflow-y-auto rounded-lg border border-slate-800 bg-black/60 p-3 font-mono text-[11px] leading-relaxed space-y-0.5"
+            >
+              {publishLog.length === 0 && (
+                <span className="text-slate-600">Console ready. Hit "Publish once" or enable auto-publish.</span>
+              )}
+              {publishLog.map((entry, i) => (
+                <div key={i} className="flex gap-2">
+                  <span className="text-slate-600 shrink-0">{entry.ts}</span>
+                  <span className={{
+                    ok:   "text-emerald-400",
+                    err:  "text-rose-400",
+                    warn: "text-amber-400",
+                    info: "text-slate-400",
+                  }[entry.level] || "text-slate-400"}>
+                    {entry.level === "ok"   && "[OK]  "}
+                    {entry.level === "err"  && "[ERR] "}
+                    {entry.level === "warn" && "[WRN] "}
+                    {entry.level === "info" && "[   ] "}
+                    {entry.msg}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+
           {/* Instructions */}
           <section className="rounded-xl border border-slate-800/60 bg-slate-900/30 p-5 text-xs text-slate-500 space-y-2 leading-relaxed">
             <div className="text-slate-400 font-semibold mb-2">How to use</div>
@@ -361,6 +491,7 @@ function ConsoleUI() {
             <div>4. Adjust sliders to fine-tune individual parameters on top of the scenario baseline.</div>
             <div>5. Toggle <span className="text-cyan-300">Animating</span> to freeze the data at any point for a static screenshot.</div>
             <div>6. Click <span className="text-rose-300 font-mono">Disable Mock</span> or the banner link to switch back to real hardware data.</div>
+            <div>7. Use the <span className="text-emerald-300 font-mono">Publish to AWS</span> panel to push mock records to DynamoDB and verify the pipeline works end-to-end.</div>
             <div className="pt-2 border-t border-slate-800">
               Passphrase: <span className="font-mono text-slate-400">{PASSPHRASE}</span>
               {" · "}

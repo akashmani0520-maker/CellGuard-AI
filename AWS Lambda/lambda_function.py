@@ -30,7 +30,7 @@ class DecimalEncoder(json.JSONEncoder):
 CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'OPTIONS,GET,PATCH,DELETE'
+    'Access-Control-Allow-Methods': 'OPTIONS,GET,POST,PATCH,DELETE'
 }
 
 def build_response(status_code, body):
@@ -101,6 +101,48 @@ def lambda_handler(event, context):
             
             else:
                 return build_response(400, {'error': 'Invalid enquiry parameter. Use ?enquiry=latest or ?enquiry=history'})
+
+        # ==========================================
+        # POST: INJECT MOCK / DEMO TELEMETRY RECORD
+        # ==========================================
+        # Accepts a full telemetry snapshot from the Demo Console and writes
+        # it directly to DynamoDB, bypassing the ESP32 -> IoT Core path.
+        # Useful for verifying the API and dashboard pipeline without hardware.
+        elif method == 'POST':
+            if not body:
+                return build_response(400, {'error': 'Body required for POST. Send a telemetry JSON object.'})
+
+            import time as _time
+            # Use provided timestamp or generate one (ms epoch string, zero-padded to 13 chars).
+            ts_ms = body.get('timestamp') or str(int(_time.time() * 1000)).zfill(13)
+            ts_ms = str(ts_ms).zfill(13)
+
+            # Build the item: start from the submitted body, enforce key fields.
+            item = dict(body)
+            item['device_id'] = device_id
+            item['timestamp']  = ts_ms
+            item['_demo']      = True   # mark as synthetic so it's distinguishable
+
+            # DynamoDB requires numbers as Decimal; convert any remaining floats.
+            def to_decimal(obj):
+                if isinstance(obj, float):
+                    return Decimal(str(obj))
+                if isinstance(obj, dict):
+                    return {k: to_decimal(v) for k, v in obj.items()}
+                if isinstance(obj, list):
+                    return [to_decimal(v) for v in obj]
+                return obj
+
+            item = to_decimal(item)
+
+            TABLE_TELEMETRY.put_item(Item=item)
+            logger.info(f"Demo telemetry injected for {device_id} at ts={ts_ms}")
+
+            return build_response(200, {
+                'message': 'Demo telemetry record written to DynamoDB.',
+                'device_id': device_id,
+                'timestamp': ts_ms,
+            })
 
         # ==========================================
         # PATCH: UPDATE RELAY STATE (MQTT Dispatch)

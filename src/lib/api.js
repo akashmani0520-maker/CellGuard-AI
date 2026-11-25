@@ -104,3 +104,32 @@ export async function sendCommand(deviceId = DEFAULT_DEVICE_ID, command, state =
   }
   return res.json();
 }
+
+/**
+ * POST a mock telemetry snapshot directly to DynamoDB via the Lambda POST handler.
+ * Bypasses the ESP32 -> IoT Core path so the demo console can verify the full pipeline.
+ * @param {object} snapshot  Normalised snapshot from generateSnapshot()
+ * @param {string} deviceId  Optional device_id override (defaults to MOCK_DEMO_DEVICE)
+ */
+export async function publishMockTelemetry(snapshot, deviceId = "MOCK_DEMO_DEVICE") {
+  const payload = {
+    device_id: deviceId,
+    timestamp: String(Date.now()),
+    ...snapshot.telemetry,
+    // Wrap analysis fields at the top level so Lambda stores them
+    is_safe: snapshot.analysis?.is_safe ?? true,
+    anomalies: snapshot.analysis?.anomalies ?? [],
+  };
+
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(`Publish failed (${res.status}): ${json?.error || res.statusText}`);
+  }
+  return json;
+}
