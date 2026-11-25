@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Save, RefreshCcw, Plug, Wifi, Cloud, Sparkles, Trash2, Palette, Check, Eye, EyeOff } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Save, RefreshCcw, Plug, Wifi, Cloud, Sparkles, Trash2, Palette, Check, Eye, EyeOff, Sliders, Shield } from "lucide-react";
 import { Card, Pill, Readout } from "../components/ui";
 import { useDevice } from "../context/DeviceContext";
 import { useTelemetryCtx } from "../context/TelemetryContext";
@@ -271,6 +272,31 @@ export default function Settings() {
               className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-200 outline-none focus:border-purple-500 font-mono"
             />
           </div>
+        </div>
+      </Card>
+
+      <Card
+        title="Demo & Mock Physics Simulator"
+        subtitle="Internal testing console for 3S pack scenarios and viva defense"
+        icon={<Sliders className="h-4 w-4 text-amber-300" />}
+        className="xl:col-span-3"
+      >
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <p className="text-xs text-slate-300">
+              Access the secret demo console to test 12 viva protection scenarios, dynamic load simulator (0–15A), IR voltage sag, and publish simulated telemetry to AWS.
+            </p>
+            <p className="text-[11px] text-slate-500 mt-1 font-mono">
+              Passphrase: <span className="text-slate-400">cellguard-demo</span> · Accessible via <span className="text-slate-400">/demo</span> or <span className="text-slate-400">/mock</span>
+            </p>
+          </div>
+          <Link
+            to="/demo"
+            className="shrink-0 inline-flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-500/20 transition-colors"
+          >
+            <Shield className="h-3.5 w-3.5 text-amber-400" />
+            Open Demo Console
+          </Link>
         </div>
       </Card>
       </div>

@@ -131,8 +131,55 @@ function ScenarioCard({ sc, active, onClick }) {
   );
 }
 
+// ---- Live telemetry preview card --------------------------------------------
+function TelemetryPreview({ snap }) {
+  if (!snap) return null;
+  const t = snap.telemetry || {};
+  const current = Number(t.pack_current || 0);
+  const power = Number(t.pack_power || 0);
+  const isCharging = Boolean(t.charging || current < 0);
+  const rows = [
+    ["Pack Voltage", `${(t.pack_voltage ?? 0).toFixed(2)} V`],
+    ["Pack Current", `${Math.abs(current).toFixed(2)} A ${isCharging ? "(Charge)" : "(Discharge)"}`],
+    ["Pack Power", `${Math.abs(power).toFixed(1)} W`],
+    ["State of Charge", `${(t.soc ?? 0).toFixed(1)} %`],
+    ["Cell Delta", `${(((t.cell_delta || 0)) * 1000).toFixed(0)} mV`],
+    ["Max Temp", `${Math.max(...(t.temperature && t.temperature.length ? t.temperature : [0])).toFixed(1)} °C`],
+    ["Fault Flags", `0x${((t.fault_flags || 0)).toString(16).padStart(2, "0").toUpperCase()}`],
+    ["Fault Count", String(t.fault_count || 0)],
+    ["BMS Online", t.bms_online ? "Yes" : "No"],
+    ["Is Safe", snap.analysis?.is_safe ? "Yes" : "No"],
+  ];
+
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+      <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+        Live Preview
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex justify-between items-center border-b border-slate-800/60 pb-1.5">
+            <span className="text-xs text-slate-500">{label}</span>
+            <span className="text-xs font-mono font-semibold text-slate-200">{value}</span>
+          </div>
+        ))}
+      </div>
+      {snap.analysis?.anomalies?.length > 0 && (
+        <div className="mt-3 space-y-1">
+          {snap.analysis.anomalies.map((a, i) => (
+            <div key={i} className="flex items-center gap-2 text-xs text-rose-300 bg-rose-500/10 rounded-lg px-3 py-1.5">
+              <AlertTriangle className="h-3 w-3 shrink-0" />
+              {a}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- Dynamic Load Simulator -------------------------------------------------
-function LoadSimulator({ currentPreset, onSelectPreset, overrides, onOverrideChange }) {
+function LoadSimulator({ currentPreset, onSelectPreset, overrides = {}, onOverrideChange }) {
   const customAmps = overrides.pack_current !== undefined ? overrides.pack_current : null;
 
   return (
@@ -345,8 +392,8 @@ function ConsoleUI() {
           <div className="flex items-center gap-2">
             <Shield className="h-4 w-4 text-amber-400" />
             <span className="font-semibold text-white text-sm">Demo Console</span>
-            <span className="text-[10px] text-slate-600 font-mono bg-slate-800/80 px-2 py-0.5 rounded">
-              /demo
+            <span className="text-[10px] text-slate-500 font-mono bg-slate-800/80 px-2 py-0.5 rounded">
+              /demo · /mock
             </span>
           </div>
         </div>
@@ -549,7 +596,7 @@ function ConsoleUI() {
             <div className="pt-2 border-t border-slate-800">
               Passphrase: <span className="font-mono text-slate-400">{PASSPHRASE}</span>
               {" · "}
-              URL: <span className="font-mono text-slate-400">/demo</span>
+              URL: <span className="font-mono text-slate-400">/demo or /mock</span>
               {" · "}
               Not linked in sidebar navigation.
             </div>
@@ -577,7 +624,7 @@ function ConsoleUI() {
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  {preview.telemetry.cell_voltage.map((v, i) => {
+                  {preview.telemetry.cell_voltage.slice(0, 3).map((v, i) => {
                     const danger = v < 2.95 || v > 4.25;
                     const warn = v < 3.3 || v > 4.15;
                     return (

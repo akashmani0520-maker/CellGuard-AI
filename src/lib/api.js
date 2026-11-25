@@ -51,6 +51,23 @@ export function normalizeTelemetry(item) {
     coerceNumbers(telemetry, key, rawTelemetry[key])
   );
 
+  // Enforce 3S battery constraints across all ingested data
+  if (Array.isArray(telemetry.cell_voltage)) {
+    telemetry.cell_voltage = telemetry.cell_voltage.slice(0, 3).map(Number);
+    // If pack_voltage was 4S (e.g. ~14.4V), recompute true 3S sum
+    if (telemetry.cell_voltage.length === 3 && telemetry.pack_voltage > 13.0) {
+      const sum3 = telemetry.cell_voltage.reduce((a, b) => a + b, 0);
+      if (sum3 >= 8.5 && sum3 <= 12.9) {
+        telemetry.pack_voltage = Number(sum3.toFixed(3));
+      }
+    }
+  }
+
+  // Ensure power is always a positive magnitude in Watts
+  if (telemetry.pack_power !== undefined) {
+    telemetry.pack_power = Math.abs(Number(telemetry.pack_power) || 0);
+  }
+
   const isSafe = analysis.is_safe === true;
   return {
     deviceId: String(item.device_id || telemetry.device_id || DEFAULT_DEVICE_ID),

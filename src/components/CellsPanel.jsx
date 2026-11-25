@@ -7,7 +7,8 @@ import { cellTone, tone } from "../lib/faults";
 export default function CellsPanel() {
   const { latest } = useTelemetryCtx();
   const t = latest?.telemetry || {};
-  const cells = Array.isArray(t.cell_voltage) ? t.cell_voltage : [];
+  // Strictly enforce 3S series cell display
+  const cells = Array.isArray(t.cell_voltage) ? t.cell_voltage.slice(0, 3) : [];
   const nominal = 3.7;
 
   return (
