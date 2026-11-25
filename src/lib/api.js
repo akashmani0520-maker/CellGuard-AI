@@ -68,14 +68,35 @@ export function normalizeTelemetry(item) {
     telemetry.pack_power = Math.abs(Number(telemetry.pack_power) || 0);
   }
 
-  const isSafe = analysis.is_safe === true;
+  // Extract anomalies list from wrapped analysis or flat item
+  const anomalies = Array.isArray(analysis.anomalies)
+    ? [...analysis.anomalies]
+    : Array.isArray(item.anomalies)
+    ? [...item.anomalies]
+    : [];
+
+  // Determine true safety status
+  let isSafe = true;
+  if (typeof analysis.is_safe === "boolean") {
+    isSafe = analysis.is_safe;
+  } else if (typeof item.is_safe === "boolean") {
+    isSafe = item.is_safe;
+  } else {
+    // If not explicitly set, evaluate telemetry parameters:
+    const faults = Number(telemetry.fault_flags) || 0;
+    const maxT = Math.max(0, ...(telemetry.temperature || []).map(Number));
+    const cells = telemetry.cell_voltage || [];
+    const hasCellFault = cells.some((v) => v < 2.85 || v > 4.28);
+    isSafe = faults === 0 && maxT <= 45 && !hasCellFault && anomalies.length === 0;
+  }
+
   return {
     deviceId: String(item.device_id || telemetry.device_id || DEFAULT_DEVICE_ID),
     timestamp: item.timestamp || telemetry.timestamp,
     telemetry,
     analysis: {
       is_safe: isSafe,
-      anomalies: Array.isArray(analysis.anomalies) ? analysis.anomalies : [],
+      anomalies,
       ...analysis,
       is_safe: isSafe,
     },

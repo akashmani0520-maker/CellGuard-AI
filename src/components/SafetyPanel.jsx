@@ -30,17 +30,27 @@ function Ring({ value, toneKey }) {
 export default function SafetyPanel() {
   const { latest } = useTelemetryCtx();
   const { risk, systemStatus, toneKey } = computeRisk(latest);
-  const safe = latest?.analysis?.is_safe;
-  const Icon = safe ? ShieldCheck : ShieldAlert;
+  const isHealthy = toneKey === "safe";
+  const Icon = isHealthy ? ShieldCheck : ShieldAlert;
+
+  const statusText = isHealthy
+    ? "Analysis: all 3S cells balanced, temperatures nominal, zero faults active."
+    : toneKey === "warning"
+    ? "Analysis: advisory active — check cell drift and thermal channels."
+    : "Analysis: critical protection threshold exceeded — review active faults.";
 
   return (
     <Card
-      icon={<Icon className={`h-4 w-4 ${safe ? "text-emerald-300" : "text-rose-300"}`} />}
+      icon={<Icon className={`h-4 w-4 ${toneKey === "danger" ? "text-rose-400" : toneKey === "warning" ? "text-amber-400" : "text-emerald-400"}`} />}
       title="Safety Assessment"
-      subtitle="Heuristic fire-risk from faults, temperatures & analysis"
+      subtitle="Heuristic fire-risk from faults, temperatures & cell delta"
       actions={
         <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-          toneKey === "danger" ? "border-rose-500/40 text-rose-300" : toneKey === "warning" ? "border-amber-500/40 text-amber-300" : "border-emerald-500/40 text-emerald-300"
+          toneKey === "danger"
+            ? "border-rose-500/40 text-rose-300 bg-rose-500/10"
+            : toneKey === "warning"
+            ? "border-amber-500/40 text-amber-300 bg-amber-500/10"
+            : "border-emerald-500/40 text-emerald-300 bg-emerald-500/10"
         }`}>
           {systemStatus}
         </span>
@@ -49,9 +59,7 @@ export default function SafetyPanel() {
       <div className="flex flex-col items-center justify-center py-2">
         <Ring value={risk} toneKey={toneKey} />
         <p className="mt-4 text-sm text-slate-400 text-center max-w-xs">
-          {safe
-            ? "Analysis: no anomalies detected on the latest sample."
-            : "Analysis flagged anomalies on the latest sample — review faults and cell status."}
+          {statusText}
         </p>
       </div>
     </Card>
